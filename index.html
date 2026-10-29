@@ -1,0 +1,1562 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); } body { margin: 0; } [hidden] { display: none !important; }</style>
+<title>Game of Life</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Shippori+Mincho+B1:wght@700;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+/* Layout: a one-screen instrument. A kaya Go board fills the left; live cells sit as stones on its
+   intersections. A slim slate rail on the right carries the title, readout and controls.
+   Under 860px it stacks (title, board, rail) and the page scrolls. */
+:root {
+  --bg: #E4E6EB;
+  --surface: #F3F4F7;
+  --ink: #16181E;
+  --muted: #586074;
+  --line: #CACED8;
+  --accent: #2D3C7A;
+  --accent-ink: #FFFFFF;
+  --accent-soft: #D9DFF2;
+  --danger: #A3341F;
+  --board: #D5A658;
+  --board-grid: rgba(56, 34, 10, 0.5);
+  --board-star: rgba(44, 26, 8, 0.85);
+  --board-grain: #784612;
+  --board-edge: rgba(92, 58, 18, 0.4);
+  --board-vignette: rgba(80, 48, 10, 0.18);
+  --board-lift: 0 1px 2px rgba(58, 38, 12, 0.18), 0 24px 48px -28px rgba(58, 38, 12, 0.6);
+  --float-shadow: 0 8px 20px -12px rgba(20, 22, 28, 0.45);
+  --toast-bg: rgba(20, 22, 28, 0.9);
+  --toast-ink: #F3F4F7;
+
+  --font-display: "Shippori Mincho B1", "Hiragino Mincho ProN", "Yu Mincho", Georgia, serif;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --text-xs: 0.6875rem;
+  --text-sm: 0.8125rem;
+  --text-md: 0.9375rem;
+  --text-lg: 1.75rem;
+  --text-xl: 2.375rem;
+  --radius: 6px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101217;
+    --surface: #181B22;
+    --ink: #E6E8EE;
+    --muted: #98A0B5;
+    --line: #2A2F3B;
+    --accent: #A7B6F4;
+    --accent-ink: #10131F;
+    --accent-soft: #232A47;
+    --danger: #F2937C;
+    --board: #BF9250;
+    --board-grid: rgba(36, 20, 4, 0.55);
+    --board-star: rgba(30, 16, 2, 0.9);
+    --board-grain: #5A320A;
+    --board-edge: rgba(0, 0, 0, 0.5);
+    --board-vignette: rgba(0, 0, 0, 0.32);
+    --board-lift: 0 1px 2px rgba(0, 0, 0, 0.4), 0 24px 48px -24px rgba(0, 0, 0, 0.85);
+    --float-shadow: 0 8px 20px -10px rgba(0, 0, 0, 0.7);
+    --toast-bg: rgba(236, 238, 244, 0.94);
+    --toast-ink: #101217;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101217;
+  --surface: #181B22;
+  --ink: #E6E8EE;
+  --muted: #98A0B5;
+  --line: #2A2F3B;
+  --accent: #A7B6F4;
+  --accent-ink: #10131F;
+  --accent-soft: #232A47;
+  --danger: #F2937C;
+  --board: #BF9250;
+  --board-grid: rgba(36, 20, 4, 0.55);
+  --board-star: rgba(30, 16, 2, 0.9);
+  --board-grain: #5A320A;
+  --board-edge: rgba(0, 0, 0, 0.5);
+  --board-vignette: rgba(0, 0, 0, 0.32);
+  --board-lift: 0 1px 2px rgba(0, 0, 0, 0.4), 0 24px 48px -24px rgba(0, 0, 0, 0.85);
+  --float-shadow: 0 8px 20px -10px rgba(0, 0, 0, 0.7);
+  --toast-bg: rgba(236, 238, 244, 0.94);
+  --toast-ink: #101217;
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 16px;
+}
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.app {
+  height: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 22rem;
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas: "stage head" "stage rail";
+  gap: 18px 24px;
+}
+
+/* ---------- Masthead ---------- */
+.masthead { grid-area: head; display: grid; gap: 0.375rem; }
+.eyebrow {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--text-xl);
+  line-height: 1;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+.rule-sentence { margin: 0.25rem 0 0; color: var(--muted); max-width: 42ch; text-wrap: pretty; }
+
+/* ---------- Board ---------- */
+.stage {
+  grid-area: stage;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--board);
+  box-shadow: var(--board-lift);
+}
+.stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px var(--board-edge), inset 0 0 48px var(--board-vignette);
+}
+.stage canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  cursor: crosshair;
+}
+.stage[data-tool="move"] canvas { cursor: grab; }
+.stage.grabbing canvas { cursor: grabbing; }
+
+.hint, .toast {
+  position: absolute;
+  z-index: 2;
+  top: 12px;
+  max-width: calc(100% - 24px);
+  padding: 0.375rem 0.75rem;
+  border-radius: 8px;
+  background: var(--toast-bg);
+  color: var(--toast-ink);
+  font-size: var(--text-sm);
+  pointer-events: none;
+}
+.hint { left: 12px; }
+.toast {
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  text-align: center;
+  animation: toast-in 0.18s ease-out;
+}
+@keyframes toast-in { from { opacity: 0; transform: translate(-50%, -4px); } }
+
+.board-tools {
+  position: absolute;
+  z-index: 2;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--float-shadow);
+}
+.tool {
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  height: 2rem;
+  min-width: 2rem;
+  padding: 0 0.625rem;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+.tool:hover { background: var(--bg); }
+.tool[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.tool.glyph { font-size: 1.125rem; line-height: 1; padding: 0; }
+.tool-sep { width: 1px; align-self: stretch; margin: 4px 4px; background: var(--line); }
+
+/* ---------- Rail ---------- */
+.rail {
+  grid-area: rail;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding-right: 6px;
+  padding-bottom: 4px;
+}
+.section { display: grid; gap: 0.75rem; padding-top: 18px; border-top: 1px solid var(--line); }
+.section.first { padding-top: 0; border-top: 0; }
+.label {
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.readout {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.stats { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; }
+.stat { display: grid; gap: 0.125rem; min-width: 0; }
+.num {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: var(--text-lg);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.spark { margin: 0; display: grid; gap: 0.375rem; }
+.spark canvas { display: block; width: 100%; height: 3.25rem; }
+.spark figcaption { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.btn {
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  height: 2.375rem;
+  padding: 0 0.875rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.12s, background-color 0.12s;
+}
+.btn:hover:not(:disabled) { border-color: var(--muted); }
+.btn:disabled { opacity: 0.45; cursor: default; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.primary:hover:not(:disabled) { border-color: var(--accent); filter: brightness(1.1); }
+.btn svg { width: 0.75rem; height: 0.75rem; fill: currentColor; flex: none; }
+
+.transport { display: grid; grid-template-columns: 1.35fr 1fr 1fr 1fr; gap: 0.5rem; }
+.transport .btn { padding: 0 0.5rem; }
+.speed { display: grid; grid-template-columns: auto minmax(0, 1fr) 4.75rem; align-items: center; gap: 0.75rem; }
+.speed input { width: 100%; margin: 0; accent-color: var(--accent); }
+.speed output { font-family: var(--font-mono); font-size: var(--text-sm); text-align: right; font-variant-numeric: tabular-nums; }
+.toggles { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; }
+.check { display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: var(--text-sm); }
+.check input { width: 1rem; height: 1rem; margin: 0; accent-color: var(--accent); }
+.swatch { display: inline-block; width: 0.75rem; height: 0.75rem; border-radius: 50%; border: 1px solid var(--line); background: radial-gradient(circle at 35% 30%, #FFFFFF, #CFCBC2); }
+
+.patterns { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.pattern {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius);
+  padding: 0.5rem 0.625rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 0.75rem;
+  row-gap: 0.125rem;
+  cursor: pointer;
+}
+.pattern:hover { background: var(--surface); }
+.pattern[aria-current="true"] { background: var(--accent-soft); }
+.pattern-name { font-weight: 700; font-size: var(--text-md); }
+.chip {
+  align-self: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0 0.375rem;
+}
+.pattern[aria-current="true"] .chip { color: var(--accent); border-color: currentColor; }
+.pattern-note { grid-column: 1 / -1; color: var(--muted); font-size: var(--text-sm); }
+
+.row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.row > .grow { flex: 1 1 8rem; }
+select, .field {
+  font: inherit;
+  font-size: var(--text-sm);
+  height: 2.375rem;
+  min-width: 0;
+  padding: 0 0.625rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+}
+select { width: 100%; }
+.field { font-family: var(--font-mono); }
+textarea {
+  width: 100%;
+  min-height: 6.5rem;
+  resize: vertical;
+  padding: 0.5rem 0.625rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+}
+.help { margin: 0; color: var(--muted); font-size: var(--text-sm); }
+.error { margin: 0; color: var(--danger); font-size: var(--text-sm); }
+
+.keys dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.375rem 0.75rem; margin: 0; font-size: var(--text-sm); }
+.keys dt, .keys dd { margin: 0; }
+.keys dd { color: var(--muted); }
+kbd {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: 0.0625rem 0.375rem;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+@media (max-width: 860px) {
+  html, body { height: auto; }
+  .app {
+    height: auto;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+    grid-template-areas: "head" "stage" "rail";
+    gap: 16px;
+  }
+  .stage { height: min(66vh, 36rem); min-height: 18rem; }
+  .rail { overflow: visible; padding-right: 0; }
+  h1 { font-size: 2rem; }
+}
+@media (pointer: coarse) { .keys { display: none; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="masthead">
+    <p class="eyebrow">Cellular automaton · John Conway, 1970</p>
+    <h1>Game of Life</h1>
+    <p class="rule-sentence" id="ruleSentence">An empty cell with exactly 3 live neighbors is born. A live cell with 2 or 3 live neighbors survives; every other live cell dies.</p>
+  </header>
+
+  <main class="stage" id="stage" data-tool="draw">
+    <canvas id="board" role="img" aria-label="Game of Life board. Click or tap to toggle cells."></canvas>
+    <p class="hint" id="hint">Click or drag to draw cells · scroll to zoom · right-drag to pan</p>
+    <p class="toast" id="toast" role="status" aria-live="polite" hidden></p>
+    <div class="board-tools" role="toolbar" aria-label="Board tools">
+      <button class="tool" id="toolDraw" type="button" aria-pressed="true">Draw</button>
+      <button class="tool" id="toolMove" type="button" aria-pressed="false">Move</button>
+      <span class="tool-sep" aria-hidden="true"></span>
+      <button class="tool glyph" id="zoomOut" type="button" aria-label="Zoom out">−</button>
+      <button class="tool glyph" id="zoomIn" type="button" aria-label="Zoom in">+</button>
+      <button class="tool" id="fit" type="button" title="Frame every live cell">Fit</button>
+    </div>
+  </main>
+
+  <aside class="rail" aria-label="Controls">
+    <section class="section first">
+      <div class="readout">
+        <div class="stats">
+          <div class="stat"><span class="label">Generation</span><span class="num" id="gen">0</span></div>
+          <div class="stat"><span class="label">Population</span><span class="num" id="pop">0</span></div>
+        </div>
+        <figure class="spark">
+          <canvas id="spark" aria-hidden="true"></canvas>
+          <figcaption id="sparkCap">Population by generation</figcaption>
+        </figure>
+      </div>
+      <div class="transport">
+        <button class="btn primary" id="play" type="button" aria-pressed="false">
+          <svg id="iconPlay" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 1l9 5-9 5z"/></svg>
+          <svg id="iconPause" viewBox="0 0 12 12" aria-hidden="true" hidden><path d="M2 1h3v10H2zM7 1h3v10H7z"/></svg>
+          <span id="playLabel">Play</span>
+        </button>
+        <button class="btn" id="step" type="button" title="Advance one generation">Step</button>
+        <button class="btn" id="reset" type="button" title="Back to generation 0">Reset</button>
+        <button class="btn" id="clear" type="button" title="Remove every cell">Clear</button>
+      </div>
+      <div class="speed">
+        <label class="label" for="speed">Speed</label>
+        <input type="range" id="speed" min="0" max="11" step="1" value="4">
+        <output id="speedOut" for="speed">12 gen/s</output>
+      </div>
+      <div class="toggles">
+        <label class="check"><input type="checkbox" id="births" checked> <span class="swatch" aria-hidden="true"></span> White stones for newborn cells</label>
+        <label class="check"><input type="checkbox" id="grid" checked> Grid lines</label>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="label">Patterns</h2>
+      <ul class="patterns" id="patterns"></ul>
+      <div class="row">
+        <button class="btn grow" id="soup" type="button">Random soup</button>
+        <label class="sr-only" for="density">Soup density</label>
+        <select id="density" style="width:auto">
+          <option value="0.2">20% full</option>
+          <option value="0.35" selected>35% full</option>
+          <option value="0.5">50% full</option>
+        </select>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="label"><label for="rulePreset">Rule</label></h2>
+      <select id="rulePreset"></select>
+      <form class="row" id="ruleForm">
+        <label class="sr-only" for="ruleInput">Rulestring</label>
+        <input class="field grow" id="ruleInput" value="B3/S23" spellcheck="false" autocomplete="off" aria-describedby="ruleHelp">
+        <button class="btn" type="submit">Apply</button>
+      </form>
+      <p class="help" id="ruleHelp">B lists the neighbor counts that create a cell, S the counts that keep one alive.</p>
+      <p class="error" id="ruleErr" role="alert" hidden></p>
+    </section>
+
+    <section class="section">
+      <h2 class="label"><label for="rleText">Import or export</label></h2>
+      <textarea id="rleText" spellcheck="false" placeholder="Paste RLE or plaintext, such as a pattern from LifeWiki:&#10;x = 3, y = 3, rule = B3/S23&#10;bob$2bo$3o!"></textarea>
+      <div class="row">
+        <button class="btn grow" id="rleLoad" type="button">Load pattern</button>
+        <button class="btn grow" id="rleCopy" type="button">Copy board as RLE</button>
+      </div>
+      <p class="error" id="rleErr" role="alert" hidden></p>
+    </section>
+
+    <section class="section keys">
+      <h2 class="label">Keys</h2>
+      <dl>
+        <dt><kbd>Space</kbd></dt><dd>Play or pause</dd>
+        <dt><kbd>N</kbd></dt><dd>Step one generation</dd>
+        <dt><kbd>R</kbd> <kbd>C</kbd></dt><dd>Reset to generation 0, clear the board</dd>
+        <dt><kbd>M</kbd></dt><dd>Switch between Draw and Move</dd>
+        <dt><kbd>F</kbd> <kbd>+</kbd> <kbd>−</kbd></dt><dd>Fit, zoom in, zoom out</dd>
+        <dt><kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd></dt><dd>Pan the board</dd>
+        <dt><kbd>B</kbd> <kbd>G</kbd></dt><dd>Toggle newborn marking, grid lines</dd>
+      </dl>
+    </section>
+  </aside>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+// <sim>
+// Sparse, unbounded plane. Each live cell is one integer key; cells past ±LIMIT drop off the edge.
+const OFF = 8192, SPAN = 16384, LIMIT = 8000;
+const toKey = (x, y) => (x + OFF) * SPAN + (y + OFF);
+const keyX = k => Math.floor(k / SPAN) - OFF;
+const keyY = k => (k % SPAN) - OFF;
+const NB = [];
+for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) if (dx || dy) NB.push(dx * SPAN + dy);
+
+function nextGen(cells, born, survive) {
+  const counts = new Map();
+  for (const k of cells) {
+    for (let i = 0; i < 8; i++) {
+      const n = k + NB[i];
+      counts.set(n, (counts.get(n) || 0) + 1);
+    }
+  }
+  const next = new Set(), births = new Set();
+  for (const [k, c] of counts) {
+    if (cells.has(k)) {
+      if (survive[c]) next.add(k);
+    } else if (born[c]) {
+      const x = keyX(k), y = keyY(k);
+      if (x >= -LIMIT && x <= LIMIT && y >= -LIMIT && y <= LIMIT) { next.add(k); births.add(k); }
+    }
+  }
+  if (survive[0]) for (const k of cells) if (!counts.has(k)) next.add(k);
+  return { next, births };
+}
+
+function parseRule(text) {
+  const s = String(text).replace(/\s+/g, '').toUpperCase();
+  let m = s.match(/^B([0-8]*)\/?S([0-8]*)$/), b, sv;
+  if (m) { b = m[1]; sv = m[2]; }
+  else if ((m = s.match(/^([0-8]*)\/([0-8]*)$/))) { sv = m[1]; b = m[2]; }
+  else return { error: 'Write the rule as B, the birth counts, then S, the survival counts. For example: B3/S23.' };
+  if (b.includes('0')) return { error: 'Rules with B0 bring empty space to life, which an endless board can’t show. Remove the 0 after B.' };
+  const born = new Uint8Array(9), survive = new Uint8Array(9);
+  for (const ch of b) born[+ch] = 1;
+  for (const ch of sv) survive[+ch] = 1;
+  const digits = a => a.reduce((str, v, i) => (v ? str + i : str), '');
+  return { born, survive, name: `B${digits(born)}/S${digits(survive)}` };
+}
+
+function describeRule(r) {
+  const list = a => { const d = []; a.forEach((v, i) => v && d.push(i)); return d; };
+  const joinOr = d => (d.length === 1 ? String(d[0]) : d.slice(0, -1).join(', ') + ' or ' + d[d.length - 1]);
+  const noun = d => (d.length === 1 && d[0] === 1 ? 'neighbor' : 'neighbors');
+  const b = list(r.born), s = list(r.survive);
+  const birth = b.length
+    ? `An empty cell with ${b.length === 1 ? 'exactly ' : ''}${joinOr(b)} live ${noun(b)} is born.`
+    : 'No new cells are ever born.';
+  let live;
+  if (s.length === 9) live = 'Live cells never die.';
+  else if (!s.length) live = 'Every live cell dies after one generation.';
+  else live = `A live cell with ${joinOr(s)} live ${noun(s)} survives; every other live cell dies.`;
+  return `${birth} ${live}`;
+}
+
+const MAX_IMPORT = 200000;
+const TOO_BIG = 'That pattern has more than 200,000 live cells, which is more than this board can run smoothly.';
+
+// Reads RLE (the LifeWiki standard) or plaintext (.cells). Returns { cells: [[x, y]], rule } or { error }.
+function parsePattern(text) {
+  const lines = String(text).split(/\r?\n/);
+  const body = lines.filter(l => !/^\s*#/.test(l));
+  const isRLE = body.some(l => /^\s*x\s*=/.test(l)) || text.includes('$') || /^[\dbo!\s]+$/i.test(body.join(''));
+  const cells = [];
+  let rule = null;
+  if (isRLE) {
+    let data = '';
+    for (const raw of body) {
+      const line = raw.trim();
+      if (/^x\s*=/.test(line)) {
+        const m = line.match(/rule\s*=\s*([^\s,:]+)/i);
+        if (m) rule = m[1];
+        continue;
+      }
+      data += line;
+    }
+    let x = 0, y = 0, num = '';
+    for (const ch of data) {
+      if (ch >= '0' && ch <= '9') { num += ch; continue; }
+      const n = num ? parseInt(num, 10) : 1;
+      num = '';
+      if (ch === '!') break;
+      if (ch === '$') { y += n; x = 0; }
+      else if (ch === 'b' || ch === '.') x += n;
+      else if (/[a-z]/i.test(ch)) {
+        if (cells.length + n > MAX_IMPORT) return { error: TOO_BIG };
+        for (let i = 0; i < n; i++) cells.push([x + i, y]);
+        x += n;
+      }
+    }
+  } else {
+    let y = 0;
+    for (const line of lines) {
+      if (/^\s*!/.test(line)) continue;
+      for (let x = 0; x < line.length; x++) if ('Oo*'.includes(line[x])) cells.push([x, y]);
+      if (cells.length > MAX_IMPORT) return { error: TOO_BIG };
+      y++;
+    }
+  }
+  if (!cells.length) return { error: 'No live cells found. RLE marks live cells with o and empty ones with b; plaintext uses O and a dot.' };
+  return { cells, rule };
+}
+
+function toRLE(cells, ruleName) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const rows = new Map();
+  for (const k of cells) {
+    const x = keyX(k), y = keyY(k);
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+    let r = rows.get(y);
+    if (!r) rows.set(y, (r = []));
+    r.push(x);
+  }
+  const tokens = [];
+  const run = (n, ch) => tokens.push((n > 1 ? n : '') + ch);
+  let lastY = minY;
+  for (const y of [...rows.keys()].sort((a, b) => a - b)) {
+    if (y > lastY) run(y - lastY, '$');
+    lastY = y;
+    const xs = rows.get(y).sort((a, b) => a - b);
+    let cursor = minX;
+    for (let i = 0; i < xs.length; ) {
+      let j = i;
+      while (j + 1 < xs.length && xs[j + 1] === xs[j] + 1) j++;
+      if (xs[i] > cursor) run(xs[i] - cursor, 'b');
+      run(j - i + 1, 'o');
+      cursor = xs[j] + 1;
+      i = j + 1;
+    }
+  }
+  tokens.push('!');
+  let out = `x = ${maxX - minX + 1}, y = ${maxY - minY + 1}, rule = ${ruleName}\n`, line = '';
+  for (const t of tokens) {
+    if (line.length + t.length > 70) { out += line + '\n'; line = ''; }
+    line += t;
+  }
+  return out + line;
+}
+
+const PATTERNS = [
+  {
+    id: 'gun', name: 'Gosper glider gun', kind: 'Gun',
+    note: 'Fires a new glider every 30 generations. Bill Gosper found it in 1970.',
+    frame: { fill: 0.55, maxCell: 18, at: [0.3, 0.17] },
+    rows: [
+      '........................O...........',
+      '......................O.O...........',
+      '............OO......OO............OO',
+      '...........O...O....OO............OO',
+      'OO........O.....O...OO..............',
+      'OO........O...O.OO....O.O...........',
+      '..........O.....O.......O...........',
+      '...........O...O....................',
+      '............OO......................',
+    ],
+  },
+  {
+    id: 'glider', name: 'Glider', kind: 'Spaceship',
+    note: 'Speed c/4: it moves one cell diagonally every 4 generations.',
+    frame: { fill: 1, maxCell: 18, at: [0.22, 0.22] },
+    rows: ['.O.', '..O', 'OOO'],
+  },
+  {
+    id: 'lwss', name: 'Lightweight spaceship', kind: 'Spaceship',
+    note: 'Speed c/2: it moves two cells sideways every 4 generations.',
+    frame: { fill: 1, maxCell: 18, at: [0.16, 0.5] },
+    rows: ['O..O.', '....O', 'O...O', '.OOOO'],
+  },
+  {
+    id: 'pulsar', name: 'Pulsar', kind: 'Oscillator',
+    note: 'Period 3: it returns to this shape every 3 generations.',
+    frame: { fill: 0.5, maxCell: 24 },
+    rows: [
+      '..OOO...OOO..',
+      '.............',
+      'O....O.O....O',
+      'O....O.O....O',
+      'O....O.O....O',
+      '..OOO...OOO..',
+      '.............',
+      '..OOO...OOO..',
+      'O....O.O....O',
+      'O....O.O....O',
+      'O....O.O....O',
+      '.............',
+      '..OOO...OOO..',
+    ],
+  },
+  {
+    id: 'penta', name: 'Pentadecathlon', kind: 'Oscillator',
+    note: 'Period 15: it cycles through 15 shapes before repeating.',
+    frame: { fill: 0.4, maxCell: 24 },
+    rows: ['..O....O..', 'OO.OOOO.OO', '..O....O..'],
+  },
+  {
+    id: 'rpent', name: 'R-pentomino', kind: 'Methuselah',
+    note: 'Five cells that stay chaotic for 1,103 generations before settling.',
+    frame: { fill: 1, maxCell: 6 },
+    rows: ['.OO', 'OO.', '.O.'],
+  },
+  {
+    id: 'acorn', name: 'Acorn', kind: 'Methuselah',
+    note: 'Seven cells that take 5,206 generations to settle at 633.',
+    frame: { fill: 1, maxCell: 4 },
+    rows: ['.O.....', '...O...', 'OO..OOO'],
+  },
+  {
+    id: 'diehard', name: 'Diehard', kind: 'Methuselah',
+    note: 'Seven cells that vanish completely at generation 130.',
+    frame: { fill: 1, maxCell: 12 },
+    rows: ['......O.', 'OO......', '.O...OOO'],
+  },
+  {
+    id: 'line', name: 'One-line grower', kind: 'Grower',
+    note: 'A single row 39 cells wide that grows forever.',
+    frame: { fill: 0.6, maxCell: 10 },
+    rows: ['OOOOOOOO.OOOOO...OOO......OOOOOOO.OOOOO'],
+  },
+];
+// </sim>
+
+const $ = id => document.getElementById(id);
+const stage = $('stage'), canvas = $('board'), ctx = canvas.getContext('2d', { alpha: false });
+const sparkCv = $('spark'), sctx = sparkCv.getContext('2d');
+const fmt = n => n.toLocaleString('en-US');
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const MIN_CELL = 0.5, MAX_CELL = 48;
+const SPEEDS = [1, 2, 4, 8, 12, 20, 30, 45, 60, 90, 120, 240];
+const RULE_PRESETS = [
+  { name: 'Conway’s Life', rule: 'B3/S23' },
+  { name: 'HighLife', rule: 'B36/S23' },
+  { name: 'Day & Night', rule: 'B3678/S34678' },
+  { name: 'Seeds', rule: 'B2/S' },
+  { name: 'Life without Death', rule: 'B3/S012345678' },
+  { name: 'Maze', rule: 'B3/S12345' },
+];
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const coarse = matchMedia('(pointer: coarse)').matches;
+
+const state = {
+  cells: new Set(), births: new Set(), start: null, gen: 0,
+  history: [0], stride: 1, peak: 0, peakGen: 0,
+  rule: parseRule('B3/S23'), patternId: null,
+};
+const cam = { x: 0, y: 0, cell: 12 };
+const view = { w: 300, h: 300, dpr: 1 };
+const spark = { w: 300, h: 52 };
+const opts = { speedIdx: 4, running: false, tool: 'draw', births: true, grid: true };
+let colors = {};
+let dirty = true, sparkDirty = true;
+
+// ---------- Canvas resources ----------
+function readColors() {
+  const cs = getComputedStyle(document.documentElement);
+  const v = n => cs.getPropertyValue(n).trim();
+  colors = {
+    board: v('--board'), grid: v('--board-grid'), star: v('--board-star'), grain: v('--board-grain'),
+    accent: v('--accent'), accentSoft: v('--accent-soft'), line: v('--line'), surface: v('--surface'),
+  };
+  buildGrain();
+  dirty = sparkDirty = true;
+}
+
+function mulberry32(a) {
+  return () => {
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Straight vertical grain, like a masame-cut kaya board, plus a soft raking light.
+const grainCv = document.createElement('canvas');
+function buildGrain() {
+  const w = Math.max(1, Math.ceil(view.w)), h = Math.max(1, Math.ceil(view.h));
+  grainCv.width = w;
+  grainCv.height = h;
+  const g = grainCv.getContext('2d');
+  const rnd = mulberry32(1970);
+  g.strokeStyle = colors.grain || '#784612';
+  for (let x = -4; x < w + 4; x += 1 + rnd() * 4) {
+    g.globalAlpha = 0.025 + rnd() * 0.07;
+    g.lineWidth = 0.4 + rnd() * 1.4;
+    const amp = rnd() * 2.5, freq = 0.003 + rnd() * 0.01, ph = rnd() * 6.283;
+    g.beginPath();
+    for (let y = 0; y <= h + 20; y += 20) {
+      const xx = x + Math.sin(y * freq + ph) * amp;
+      if (y === 0) g.moveTo(xx, y); else g.lineTo(xx, y);
+    }
+    g.stroke();
+  }
+  g.globalAlpha = 1;
+  const light = g.createLinearGradient(0, 0, w, h);
+  light.addColorStop(0, 'rgba(255,255,255,0.10)');
+  light.addColorStop(0.55, 'rgba(255,255,255,0)');
+  light.addColorStop(1, 'rgba(0,0,0,0.10)');
+  g.fillStyle = light;
+  g.fillRect(0, 0, w, h);
+}
+
+let sprites = { px: 0, black: null, white: null };
+function stoneSprite(px, white, shadow) {
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = px;
+  const g = cv.getContext('2d');
+  const c = px / 2, r = px * 0.46;
+  if (shadow) {
+    const sg = g.createRadialGradient(c + px * 0.05, c + px * 0.07, r * 0.6, c + px * 0.05, c + px * 0.07, r * 1.08);
+    sg.addColorStop(0, 'rgba(30,18,4,0.45)');
+    sg.addColorStop(1, 'rgba(30,18,4,0)');
+    g.fillStyle = sg;
+    g.fillRect(0, 0, px, px);
+  }
+  const sx = c - px * 0.01, sy = c - px * 0.015;
+  const grad = g.createRadialGradient(sx - r * 0.35, sy - r * 0.4, r * 0.05, sx, sy, r);
+  if (white) {
+    grad.addColorStop(0, '#FFFFFF');
+    grad.addColorStop(0.6, '#EEEDE8');
+    grad.addColorStop(1, '#C7C3BA');
+  } else {
+    grad.addColorStop(0, '#6A6C73');
+    grad.addColorStop(0.3, '#2C2D32');
+    grad.addColorStop(1, '#09090B');
+  }
+  g.fillStyle = grad;
+  g.beginPath();
+  g.arc(sx, sy, r, 0, Math.PI * 2);
+  g.fill();
+  return cv;
+}
+function ensureSprites() {
+  const px = Math.max(2, Math.round(cam.cell * view.dpr));
+  if (sprites.px === px) return;
+  const shadow = cam.cell >= 9;
+  sprites = { px, black: stoneSprite(px, false, shadow), white: stoneSprite(px, true, shadow) };
+}
+
+// ---------- Drawing ----------
+function draw() {
+  const { w, h, dpr } = view, c = cam.cell;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = colors.board;
+  ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(grainCv, 0, 0, w, h);
+
+  const x0 = cam.x - w / 2 / c, y0 = cam.y - h / 2 / c;
+  const xMin = Math.floor(x0) - 1, xMax = Math.ceil(x0 + w / c) + 1;
+  const yMin = Math.floor(y0) - 1, yMax = Math.ceil(y0 + h / c) + 1;
+  const px = x => Math.round((x + 0.5 - x0) * c) + 0.5;
+  const py = y => Math.round((y + 0.5 - y0) * c) + 0.5;
+
+  if (opts.grid && c >= 5) {
+    ctx.globalAlpha = clamp((c - 5) / 7, 0, 1);
+    ctx.strokeStyle = colors.grid;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let x = xMin; x <= xMax; x++) { const sx = px(x); ctx.moveTo(sx, 0); ctx.lineTo(sx, h); }
+    for (let y = yMin; y <= yMax; y++) { const sy = py(y); ctx.moveTo(0, sy); ctx.lineTo(w, sy); }
+    ctx.stroke();
+    if (c >= 9) {
+      // Star points (hoshi) every sixth line, as on a real board.
+      const r = Math.max(1.6, c * 0.13);
+      ctx.fillStyle = colors.star;
+      ctx.beginPath();
+      for (let x = Math.ceil(xMin / 6) * 6; x <= xMax; x += 6) {
+        for (let y = Math.ceil(yMin / 6) * 6; y <= yMax; y += 6) {
+          const sx = px(x), sy = py(y);
+          ctx.moveTo(sx + r, sy);
+          ctx.arc(sx, sy, r, 0, Math.PI * 2);
+        }
+      }
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  const mark = opts.births, births = state.births;
+  if (c >= 4) {
+    ensureSprites();
+    const half = c / 2;
+    for (const k of state.cells) {
+      const x = keyX(k);
+      if (x < xMin || x > xMax) continue;
+      const y = keyY(k);
+      if (y < yMin || y > yMax) continue;
+      ctx.drawImage(mark && births.has(k) ? sprites.white : sprites.black, px(x) - half, py(y) - half, c, c);
+    }
+  } else {
+    const s = Math.max(1, c * 0.86), o = (c - s) / 2;
+    const black = new Path2D(), white = new Path2D();
+    for (const k of state.cells) {
+      const x = keyX(k);
+      if (x < xMin || x > xMax) continue;
+      const y = keyY(k);
+      if (y < yMin || y > yMax) continue;
+      (mark && births.has(k) ? white : black).rect((x - x0) * c + o, (y - y0) * c + o, s, s);
+    }
+    ctx.fillStyle = '#16161A';
+    ctx.fill(black);
+    ctx.fillStyle = '#F6F5F0';
+    ctx.fill(white);
+  }
+}
+
+function drawSpark() {
+  const { w, h } = spark, g = sctx, H = state.history, n = H.length;
+  g.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+  g.strokeStyle = colors.line;
+  g.lineWidth = 1;
+  g.beginPath();
+  g.moveTo(0, h - 0.5);
+  g.lineTo(w, h - 0.5);
+  g.stroke();
+
+  let max = 1;
+  for (const v of H) if (v > max) max = v;
+  const top = 4, ih = h - top - 1.5;
+  const yOf = v => top + ih - (v / max) * ih;
+  const pts = [];
+  if (n === 1) {
+    pts.push([0, yOf(H[0])], [w, yOf(H[0])]);
+  } else if (n <= w) {
+    for (let i = 0; i < n; i++) pts.push([(i / (n - 1)) * w, yOf(H[i])]);
+  } else {
+    const cols = Math.floor(w);
+    for (let c = 0; c < cols; c++) {
+      const a = Math.floor((c * n) / cols), b = Math.max(a + 1, Math.floor(((c + 1) * n) / cols));
+      let m = 0;
+      for (let i = a; i < b; i++) if (H[i] > m) m = H[i];
+      pts.push([(c / (cols - 1)) * w, yOf(m)]);
+    }
+  }
+  g.beginPath();
+  g.moveTo(pts[0][0], h - 1);
+  for (const [x, y] of pts) g.lineTo(x, y);
+  g.lineTo(pts[pts.length - 1][0], h - 1);
+  g.closePath();
+  g.fillStyle = colors.accentSoft;
+  g.fill();
+  g.beginPath();
+  pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
+  g.strokeStyle = colors.accent;
+  g.lineWidth = 1.5;
+  g.lineJoin = 'round';
+  g.stroke();
+  const [ex, ey] = pts[pts.length - 1];
+  const dx = Math.min(ex, w - 4);
+  g.beginPath();
+  g.arc(dx, ey, 3.5, 0, Math.PI * 2);
+  g.fillStyle = colors.surface;
+  g.fill();
+  g.beginPath();
+  g.arc(dx, ey, 2.5, 0, Math.PI * 2);
+  g.fillStyle = colors.accent;
+  g.fill();
+}
+
+function updateReadout() {
+  $('gen').textContent = fmt(state.gen);
+  $('pop').textContent = fmt(state.cells.size);
+  $('reset').disabled = state.gen === 0 || !state.start;
+  if (sparkDirty) {
+    drawSpark();
+    $('sparkCap').textContent = state.peak
+      ? `Population by generation · peak ${fmt(state.peak)} at gen ${fmt(state.peakGen)}`
+      : 'Population by generation';
+    sparkDirty = false;
+  }
+}
+
+// ---------- Simulation state ----------
+function resetHistory() {
+  const n = state.cells.size;
+  state.history = [n];
+  state.stride = 1;
+  state.peak = n;
+  state.peakGen = 0;
+  sparkDirty = true;
+}
+
+function doStep() {
+  if (state.gen === 0) state.start = new Set(state.cells);
+  const { next, births } = nextGen(state.cells, state.rule.born, state.rule.survive);
+  state.cells = next;
+  state.births = births;
+  state.gen++;
+  const n = next.size;
+  if (n > state.peak) { state.peak = n; state.peakGen = state.gen; }
+  if (state.gen % state.stride === 0) {
+    state.history.push(n);
+    if (state.history.length > 4000) {
+      state.history = state.history.filter((_, i) => i % 2 === 0);
+      state.stride *= 2;
+    }
+  }
+  dirty = sparkDirty = true;
+}
+
+function setCells(cells) {
+  state.cells = cells;
+  state.births = new Set();
+  state.start = null;
+  state.gen = 0;
+  resetHistory();
+  dirty = true;
+}
+
+function hasCell(x, y) { return state.cells.has(toKey(x, y)); }
+function setCell(x, y, alive) {
+  if (Math.abs(x) > LIMIT || Math.abs(y) > LIMIT) return;
+  const k = toKey(x, y);
+  if (alive) {
+    if (state.cells.has(k)) return;
+    state.cells.add(k);
+  } else {
+    if (!state.cells.delete(k)) return;
+    state.births.delete(k);
+  }
+  if (state.gen === 0) resetHistory();
+  dirty = true;
+}
+
+function bbox(cells) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const k of cells) {
+    const x = keyX(k), y = keyY(k);
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  return [minX, minY, maxX, maxY];
+}
+
+function placeCells(list, frameOpts) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const [x, y] of list) {
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  const w = maxX - minX + 1, h = maxY - minY + 1;
+  if (w > 2 * LIMIT || h > 2 * LIMIT) return false;
+  const ox = -minX - Math.floor(w / 2), oy = -minY - Math.floor(h / 2);
+  const cells = new Set();
+  for (const [x, y] of list) cells.add(toKey(x + ox, y + oy));
+  setCells(cells);
+  frameBox(minX + ox, minY + oy, maxX + ox, maxY + oy, frameOpts);
+  return true;
+}
+
+function frameBox(x1, y1, x2, y2, { fill = 0.6, maxCell = 28, at = [0.5, 0.5] } = {}) {
+  const w = x2 - x1 + 1, h = y2 - y1 + 1;
+  const cell = clamp(Math.min((view.w * fill) / w, (view.h * fill) / h), MIN_CELL, maxCell);
+  cam.cell = cell;
+  cam.x = (x1 + x2 + 1) / 2 - ((at[0] - 0.5) * view.w) / cell;
+  cam.y = (y1 + y2 + 1) / 2 - ((at[1] - 0.5) * view.h) / cell;
+  dirty = true;
+}
+
+function fitAll() {
+  if (!state.cells.size) { cam.x = 0; cam.y = 0; cam.cell = 12; dirty = true; return; }
+  const [x1, y1, x2, y2] = bbox(state.cells);
+  frameBox(x1, y1, x2, y2, { fill: 0.85, maxCell: 28 });
+}
+
+function zoomAt(sx, sy, factor) {
+  const wx = cam.x + (sx - view.w / 2) / cam.cell, wy = cam.y + (sy - view.h / 2) / cam.cell;
+  cam.cell = clamp(cam.cell * factor, MIN_CELL, MAX_CELL);
+  cam.x = wx - (sx - view.w / 2) / cam.cell;
+  cam.y = wy - (sy - view.h / 2) / cam.cell;
+  dirty = true;
+}
+function panBy(dx, dy) {
+  cam.x -= dx / cam.cell;
+  cam.y -= dy / cam.cell;
+  dirty = true;
+}
+
+// ---------- Controls ----------
+let acc = 0, lastT = 0;
+function setRunning(on) {
+  if (on && !state.cells.size) {
+    toast('The board is empty. Draw some cells or pick a pattern.');
+    on = false;
+  }
+  opts.running = on;
+  if (on) acc = 1;
+  $('play').setAttribute('aria-pressed', String(on));
+  $('playLabel').textContent = on ? 'Pause' : 'Play';
+  $('iconPlay').hidden = on;
+  $('iconPause').hidden = !on;
+}
+
+function stepOnce() {
+  setRunning(false);
+  if (!state.cells.size) { toast('The board is empty. Draw some cells or pick a pattern.'); return; }
+  doStep();
+  if (!state.cells.size) toast(`Every cell died out at generation ${fmt(state.gen)}.`);
+}
+
+function resetToStart() {
+  if (!state.start || state.gen === 0) return;
+  const start = state.start;
+  setCells(new Set(start));
+  state.start = null;
+}
+
+function clearBoard() {
+  setRunning(false);
+  setCells(new Set());
+  state.patternId = null;
+  markActive();
+}
+
+function setTool(t) {
+  opts.tool = t;
+  stage.dataset.tool = t;
+  $('toolDraw').setAttribute('aria-pressed', String(t === 'draw'));
+  $('toolMove').setAttribute('aria-pressed', String(t === 'move'));
+}
+
+function setSpeed(i) {
+  opts.speedIdx = clamp(i, 0, SPEEDS.length - 1);
+  $('speed').value = String(opts.speedIdx);
+  $('speedOut').textContent = `${SPEEDS[opts.speedIdx]} gen/s`;
+}
+
+function applyRule(r) {
+  state.rule = r;
+  $('ruleInput').value = r.name;
+  const idx = RULE_PRESETS.findIndex(p => p.rule === r.name);
+  $('rulePreset').selectedIndex = idx >= 0 ? idx : RULE_PRESETS.length;
+  $('ruleSentence').textContent = describeRule(r);
+  $('ruleErr').hidden = true;
+}
+function presetName(rule) {
+  const p = RULE_PRESETS.find(q => q.rule === rule);
+  return p ? ` (${p.name})` : '';
+}
+
+function loadPattern(id, quiet) {
+  const p = PATTERNS.find(q => q.id === id);
+  if (!p) return;
+  let note = '';
+  if (state.rule.name !== 'B3/S23') {
+    applyRule(parseRule('B3/S23'));
+    note = 'Rule set back to B3/S23, the rule this pattern is built for.';
+  }
+  placeCells(parsePattern(p.rows.join('\n')).cells, p.frame);
+  state.patternId = id;
+  markActive();
+  if (note && !quiet) toast(note);
+}
+
+function soup() {
+  const density = parseFloat($('density').value) || 0.35;
+  const c = cam.cell;
+  const cols = clamp(Math.floor((view.w / c) * 0.8), 8, 220);
+  const rows = clamp(Math.floor((view.h / c) * 0.8), 8, 160);
+  const x0 = Math.floor(cam.x - cols / 2), y0 = Math.floor(cam.y - rows / 2);
+  const cells = new Set();
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const X = x0 + x, Y = y0 + y;
+      if (Math.random() < density && Math.abs(X) <= LIMIT && Math.abs(Y) <= LIMIT) cells.add(toKey(X, Y));
+    }
+  }
+  setCells(cells);
+  state.patternId = null;
+  markActive();
+  toast(`Scattered ${fmt(cells.size)} cells over a ${cols} × ${rows} area.`);
+}
+
+let toastTimer = 0;
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.hidden = false;
+  dismissHint();
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.hidden = true; }, 3800);
+}
+function dismissHint() { $('hint').hidden = true; }
+
+// ---------- Pattern list and rule presets ----------
+const patternList = $('patterns');
+for (const p of PATTERNS) {
+  const li = document.createElement('li');
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'pattern';
+  b.dataset.id = p.id;
+  const name = document.createElement('span');
+  name.className = 'pattern-name';
+  name.textContent = p.name;
+  const chip = document.createElement('span');
+  chip.className = 'chip';
+  chip.textContent = p.kind;
+  const note = document.createElement('span');
+  note.className = 'pattern-note';
+  note.textContent = p.note;
+  b.append(name, chip, note);
+  b.addEventListener('click', () => loadPattern(p.id));
+  li.append(b);
+  patternList.append(li);
+}
+function markActive() {
+  for (const b of patternList.querySelectorAll('.pattern')) {
+    b.setAttribute('aria-current', String(b.dataset.id === state.patternId));
+  }
+}
+
+const presetSel = $('rulePreset');
+for (const p of RULE_PRESETS) presetSel.add(new Option(`${p.name} · ${p.rule}`, p.rule));
+const customOpt = new Option('Custom rule', '');
+customOpt.disabled = true;
+presetSel.add(customOpt);
+
+// ---------- Events ----------
+$('play').addEventListener('click', () => setRunning(!opts.running));
+$('step').addEventListener('click', stepOnce);
+$('reset').addEventListener('click', resetToStart);
+$('clear').addEventListener('click', clearBoard);
+$('speed').addEventListener('input', e => setSpeed(+e.target.value));
+$('births').addEventListener('change', e => { opts.births = e.target.checked; dirty = true; });
+$('grid').addEventListener('change', e => { opts.grid = e.target.checked; dirty = true; });
+$('soup').addEventListener('click', soup);
+$('toolDraw').addEventListener('click', () => setTool('draw'));
+$('toolMove').addEventListener('click', () => setTool('move'));
+$('zoomIn').addEventListener('click', () => zoomAt(view.w / 2, view.h / 2, 1.25));
+$('zoomOut').addEventListener('click', () => zoomAt(view.w / 2, view.h / 2, 0.8));
+$('fit').addEventListener('click', fitAll);
+
+presetSel.addEventListener('change', () => {
+  if (!presetSel.value) return;
+  const r = parseRule(presetSel.value);
+  applyRule(r);
+  toast(`Rule set to ${r.name}${presetName(r.name)}.`);
+});
+$('ruleForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const r = parseRule($('ruleInput').value);
+  if (r.error) {
+    $('ruleErr').textContent = r.error;
+    $('ruleErr').hidden = false;
+    return;
+  }
+  applyRule(r);
+  toast(`Rule set to ${r.name}${presetName(r.name)}.`);
+});
+
+function rleError(msg) {
+  const el = $('rleErr');
+  el.textContent = msg || '';
+  el.hidden = !msg;
+}
+$('rleLoad').addEventListener('click', () => {
+  const text = $('rleText').value.trim();
+  if (!text) { rleError('Paste a pattern first. RLE starts with a line like x = 3, y = 3.'); return; }
+  const res = parsePattern(text);
+  if (res.error) { rleError(res.error); return; }
+  let note = '';
+  if (res.rule) {
+    const r = parseRule(res.rule);
+    if (r.error) note = ` The file’s rule ${res.rule} isn’t supported, so ${state.rule.name} stays.`;
+    else if (r.name !== state.rule.name) { applyRule(r); note = ` Rule switched to ${r.name} from the file.`; }
+  }
+  if (!placeCells(res.cells, { fill: 0.7, maxCell: 24 })) {
+    rleError('That pattern is wider than the 16,000-cell board.');
+    return;
+  }
+  state.patternId = null;
+  markActive();
+  rleError('');
+  toast(`Loaded ${fmt(state.cells.size)} cells.${note}`);
+});
+$('rleCopy').addEventListener('click', () => {
+  if (!state.cells.size) { rleError('The board is empty, so there’s nothing to copy.'); return; }
+  rleError('');
+  const text = toRLE(state.cells, state.rule.name);
+  const ta = $('rleText');
+  ta.value = text;
+  const fallback = () => {
+    ta.focus();
+    ta.select();
+    toast('Copying is blocked here. The RLE is selected in the box, so press Ctrl+C or ⌘C.');
+  };
+  try {
+    navigator.clipboard.writeText(text).then(() => toast(`Copied ${fmt(state.cells.size)} cells as RLE.`), fallback);
+  } catch {
+    fallback();
+  }
+});
+
+// Pointer input: draw, pan, two-finger pinch.
+const pointers = new Map();
+let gesture = null, pendingTimer = 0;
+const localPoint = e => {
+  const r = canvas.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+};
+const screenToCell = p => [
+  Math.floor(cam.x + (p.x - view.w / 2) / cam.cell),
+  Math.floor(cam.y + (p.y - view.h / 2) / cam.cell),
+];
+function beginPaint(cell, id) {
+  const value = !hasCell(cell[0], cell[1]);
+  gesture = { type: 'paint', id, value, last: cell };
+  setCell(cell[0], cell[1], value);
+}
+function paintTo(cell) {
+  let [x0, y0] = gesture.last;
+  const [x1, y1] = cell;
+  const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+  let err = dx + dy;
+  for (let guard = 0; guard < 4000; guard++) {
+    setCell(x0, y0, gesture.value);
+    if (x0 === x1 && y0 === y1) break;
+    const e2 = 2 * err;
+    if (e2 >= dy) { err += dy; x0 += sx; }
+    if (e2 <= dx) { err += dx; y0 += sy; }
+  }
+  gesture.last = cell;
+}
+
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+canvas.addEventListener('pointerdown', e => {
+  if (e.button > 2) return;
+  canvas.setPointerCapture(e.pointerId);
+  const p = localPoint(e);
+  pointers.set(e.pointerId, p);
+  dismissHint();
+  if (pointers.size === 2) {
+    clearTimeout(pendingTimer);
+    gesture = { type: 'pinch', prev: null };
+    return;
+  }
+  if (pointers.size > 2) return;
+  if (opts.tool === 'move' || e.button === 1 || e.button === 2) {
+    gesture = { type: 'pan', id: e.pointerId, last: p };
+    stage.classList.add('grabbing');
+    return;
+  }
+  const cell = screenToCell(p);
+  if (e.pointerType === 'touch') {
+    // Wait a beat so a second finger can turn this into a pinch without leaving a stone behind.
+    gesture = { type: 'pending', id: e.pointerId, start: p, cell };
+    pendingTimer = setTimeout(() => {
+      if (gesture && gesture.type === 'pending') beginPaint(gesture.cell, gesture.id);
+    }, 110);
+  } else {
+    beginPaint(cell, e.pointerId);
+  }
+});
+canvas.addEventListener('pointermove', e => {
+  if (!pointers.has(e.pointerId)) return;
+  const p = localPoint(e);
+  pointers.set(e.pointerId, p);
+  if (!gesture) return;
+  if (gesture.type === 'pinch') {
+    if (pointers.size < 2) return;
+    const [a, b] = [...pointers.values()];
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+    if (gesture.prev) {
+      panBy(mid.x - gesture.prev.mid.x, mid.y - gesture.prev.mid.y);
+      zoomAt(mid.x, mid.y, dist / gesture.prev.dist);
+    }
+    gesture.prev = { mid, dist };
+    return;
+  }
+  if (e.pointerId !== gesture.id) return;
+  if (gesture.type === 'pan') {
+    panBy(p.x - gesture.last.x, p.y - gesture.last.y);
+    gesture.last = p;
+  } else if (gesture.type === 'pending') {
+    if (Math.hypot(p.x - gesture.start.x, p.y - gesture.start.y) > 6) {
+      clearTimeout(pendingTimer);
+      beginPaint(gesture.cell, gesture.id);
+      paintTo(screenToCell(p));
+    }
+  } else if (gesture.type === 'paint') {
+    paintTo(screenToCell(p));
+  }
+});
+function endPointer(e) {
+  if (!pointers.has(e.pointerId)) return;
+  pointers.delete(e.pointerId);
+  if (gesture && gesture.type === 'pending' && gesture.id === e.pointerId) {
+    clearTimeout(pendingTimer);
+    if (e.type === 'pointerup') beginPaint(gesture.cell, gesture.id);
+    gesture = null;
+  } else if (gesture && gesture.type === 'pinch') {
+    gesture = pointers.size ? { type: 'idle' } : null;
+  } else if (gesture && (gesture.id === e.pointerId || !pointers.size)) {
+    gesture = null;
+  }
+  if (!pointers.size) gesture = null;
+  stage.classList.remove('grabbing');
+}
+canvas.addEventListener('pointerup', endPointer);
+canvas.addEventListener('pointercancel', endPointer);
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  dismissHint();
+  const p = localPoint(e);
+  const dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
+  zoomAt(p.x, p.y, Math.exp(-dy * (e.ctrlKey ? 0.01 : 0.0015)));
+}, { passive: false });
+
+document.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const t = e.target, tag = t.tagName;
+  if (tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable) return;
+  if (tag === 'INPUT' && t.type !== 'checkbox') return;
+  const onControl = tag === 'BUTTON' || tag === 'INPUT';
+  const pan = 60;
+  switch (e.key) {
+    case ' ':
+      if (onControl) return;
+      setRunning(!opts.running);
+      break;
+    case 'n': case 'N': stepOnce(); break;
+    case 'r': case 'R': resetToStart(); break;
+    case 'c': case 'C': clearBoard(); break;
+    case 'f': case 'F': fitAll(); break;
+    case 'm': case 'M': setTool(opts.tool === 'draw' ? 'move' : 'draw'); break;
+    case 'b': case 'B': opts.births = !opts.births; $('births').checked = opts.births; dirty = true; break;
+    case 'g': case 'G': opts.grid = !opts.grid; $('grid').checked = opts.grid; dirty = true; break;
+    case '+': case '=': zoomAt(view.w / 2, view.h / 2, 1.25); break;
+    case '-': case '_': zoomAt(view.w / 2, view.h / 2, 0.8); break;
+    case 'ArrowLeft': panBy(pan, 0); break;
+    case 'ArrowRight': panBy(-pan, 0); break;
+    case 'ArrowUp': panBy(0, pan); break;
+    case 'ArrowDown': panBy(0, -pan); break;
+    default: return;
+  }
+  e.preventDefault();
+});
+
+// ---------- Sizing and theme ----------
+function measure() {
+  const r = stage.getBoundingClientRect();
+  view.w = Math.max(1, r.width);
+  view.h = Math.max(1, r.height);
+  view.dpr = Math.min(window.devicePixelRatio || 1, 3);
+  canvas.width = Math.round(view.w * view.dpr);
+  canvas.height = Math.round(view.h * view.dpr);
+  sprites.px = 0;
+  buildGrain();
+  dirty = true;
+}
+function measureSpark() {
+  const r = sparkCv.getBoundingClientRect();
+  spark.w = Math.max(1, r.width);
+  spark.h = Math.max(1, r.height);
+  sparkCv.width = Math.round(spark.w * view.dpr);
+  sparkCv.height = Math.round(spark.h * view.dpr);
+  sparkDirty = true;
+}
+new ResizeObserver(() => { measure(); measureSpark(); }).observe(stage);
+new ResizeObserver(measureSpark).observe(sparkCv);
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readColors);
+new MutationObserver(readColors).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+// ---------- Main loop ----------
+function loop(t) {
+  if (opts.running) {
+    const dt = lastT ? Math.min(250, t - lastT) : 16;
+    acc += (dt * SPEEDS[opts.speedIdx]) / 1000;
+    const t0 = performance.now();
+    while (acc >= 1) {
+      doStep();
+      acc -= 1;
+      if (!state.cells.size) {
+        setRunning(false);
+        toast(`Every cell died out at generation ${fmt(state.gen)}.`);
+        break;
+      }
+      if (performance.now() - t0 > 12) { acc = Math.min(acc, 1); break; }
+    }
+  }
+  lastT = t;
+  if (dirty || sparkDirty) {
+    if (dirty) draw();
+    updateReadout();
+    dirty = false;
+  }
+  requestAnimationFrame(loop);
+}
+
+// ---------- Live updates keep the board as it was ----------
+window.claude?.hot?.snapshot?.(() => ({
+  cells: [...state.cells], birthCells: [...state.births], start: state.start ? [...state.start] : null,
+  gen: state.gen, history: state.history, stride: state.stride, peak: state.peak, peakGen: state.peakGen,
+  rule: state.rule.name, patternId: state.patternId, cam: { ...cam },
+  speedIdx: opts.speedIdx, running: opts.running, tool: opts.tool, markBirths: opts.births, grid: opts.grid,
+}));
+
+function boot(data) {
+  data = data || {};
+  measure();
+  readColors();
+  measureSpark();
+  if (coarse) $('hint').textContent = 'Tap or drag to draw cells · two fingers to pan and zoom';
+  setSpeed(4);
+  applyRule(state.rule);
+  if (Array.isArray(data.cells)) {
+    const r = parseRule(data.rule || 'B3/S23');
+    applyRule(r.error ? parseRule('B3/S23') : r);
+    state.cells = new Set(data.cells);
+    state.births = new Set(data.birthCells || []);
+    state.start = data.start ? new Set(data.start) : null;
+    state.gen = data.gen || 0;
+    state.history = data.history || [state.cells.size];
+    state.stride = data.stride || 1;
+    state.peak = data.peak || state.cells.size;
+    state.peakGen = data.peakGen || 0;
+    state.patternId = data.patternId || null;
+    if (data.cam) Object.assign(cam, data.cam);
+    setSpeed(data.speedIdx ?? 4);
+    setTool(data.tool || 'draw');
+    opts.births = data.markBirths !== false;
+    opts.grid = data.grid !== false;
+    $('births').checked = opts.births;
+    $('grid').checked = opts.grid;
+    $('hint').hidden = true;
+    markActive();
+    setRunning(!!data.running);
+  } else {
+    loadPattern('gun', true);
+    if (!reduceMotion) setRunning(true);
+  }
+  dirty = sparkDirty = true;
+  requestAnimationFrame(loop);
+}
+window.claude?.hot?.ready ? window.claude.hot.ready(boot) : boot(window.claude?.hot?.data ?? {});
+})();
+</script>
+</body>
+</html>
