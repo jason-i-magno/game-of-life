@@ -1,0 +1,1666 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); } body { margin: 0; } [hidden] { display: none !important; }</style>
+<title>Game of Life in 3D</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Shippori+Mincho+B1:wght@700;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+/* Layout: the 2D page's sibling. A WebGL stage on the left holds a kaya board with Go stones in a
+   lattice above it; the same slate rail on the right carries the readout and controls.
+   Under 860px it stacks (title, stage, rail) and the page scrolls. */
+:root {
+  --bg: #E4E6EB;
+  --surface: #F3F4F7;
+  --ink: #16181E;
+  --muted: #586074;
+  --line: #CACED8;
+  --accent: #2D3C7A;
+  --accent-ink: #FFFFFF;
+  --accent-soft: #D9DFF2;
+  --danger: #A3341F;
+  --stage-hi: #F4F5F8;
+  --stage-lo: #CDD2DC;
+  --board: #D5A658;
+  --board-side: #B98A43;
+  --board-grid: rgba(56, 34, 10, 0.55);
+  --board-star: rgba(44, 26, 8, 0.85);
+  --board-grain: #784612;
+  --frame: #6A7187;
+  --fade: #B7BDCB;
+  --stage-lift: 0 1px 2px rgba(30, 34, 48, 0.12), 0 24px 48px -28px rgba(30, 34, 48, 0.45);
+  --float-shadow: 0 8px 20px -12px rgba(20, 22, 28, 0.45);
+  --toast-bg: rgba(20, 22, 28, 0.9);
+  --toast-ink: #F3F4F7;
+
+  --font-display: "Shippori Mincho B1", "Hiragino Mincho ProN", "Yu Mincho", Georgia, serif;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --text-xs: 0.6875rem;
+  --text-sm: 0.8125rem;
+  --text-md: 0.9375rem;
+  --text-lg: 1.75rem;
+  --text-xl: 2.375rem;
+  --radius: 6px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101217;
+    --surface: #181B22;
+    --ink: #E6E8EE;
+    --muted: #98A0B5;
+    --line: #2A2F3B;
+    --accent: #A7B6F4;
+    --accent-ink: #10131F;
+    --accent-soft: #232A47;
+    --danger: #F2937C;
+    --stage-hi: #232733;
+    --stage-lo: #0B0D11;
+    --board: #BF9250;
+    --board-side: #8E6630;
+    --board-grid: rgba(36, 20, 4, 0.6);
+    --board-star: rgba(30, 16, 2, 0.9);
+    --board-grain: #5A320A;
+    --frame: #6B7390;
+    --fade: #3C4356;
+    --stage-lift: 0 1px 2px rgba(0, 0, 0, 0.4), 0 24px 48px -24px rgba(0, 0, 0, 0.85);
+    --float-shadow: 0 8px 20px -10px rgba(0, 0, 0, 0.7);
+    --toast-bg: rgba(236, 238, 244, 0.94);
+    --toast-ink: #101217;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101217;
+  --surface: #181B22;
+  --ink: #E6E8EE;
+  --muted: #98A0B5;
+  --line: #2A2F3B;
+  --accent: #A7B6F4;
+  --accent-ink: #10131F;
+  --accent-soft: #232A47;
+  --danger: #F2937C;
+  --stage-hi: #232733;
+  --stage-lo: #0B0D11;
+  --board: #BF9250;
+  --board-side: #8E6630;
+  --board-grid: rgba(36, 20, 4, 0.6);
+  --board-star: rgba(30, 16, 2, 0.9);
+  --board-grain: #5A320A;
+  --frame: #6B7390;
+  --fade: #3C4356;
+  --stage-lift: 0 1px 2px rgba(0, 0, 0, 0.4), 0 24px 48px -24px rgba(0, 0, 0, 0.85);
+  --float-shadow: 0 8px 20px -10px rgba(0, 0, 0, 0.7);
+  --toast-bg: rgba(236, 238, 244, 0.94);
+  --toast-ink: #101217;
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 16px;
+}
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.app {
+  height: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 22rem;
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas: "stage head" "stage rail";
+  gap: 18px 24px;
+}
+
+/* ---------- Masthead ---------- */
+.masthead { grid-area: head; display: grid; gap: 0.375rem; }
+.eyebrow {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: var(--text-xl);
+  line-height: 1;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+.rule-sentence { margin: 0.25rem 0 0; color: var(--muted); max-width: 42ch; text-wrap: pretty; }
+
+/* ---------- Stage ---------- */
+.stage {
+  grid-area: stage;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  border-radius: 4px;
+  overflow: hidden;
+  background: radial-gradient(ellipse 120% 90% at 50% 30%, var(--stage-hi), var(--stage-lo));
+  box-shadow: var(--stage-lift);
+}
+.stage canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  cursor: grab;
+}
+.stage canvas:active { cursor: grabbing; }
+.hint, .toast {
+  position: absolute;
+  z-index: 2;
+  top: 12px;
+  max-width: calc(100% - 24px);
+  padding: 0.375rem 0.75rem;
+  border-radius: 8px;
+  background: var(--toast-bg);
+  color: var(--toast-ink);
+  font-size: var(--text-sm);
+  pointer-events: none;
+}
+.hint { left: 12px; }
+.toast {
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  text-align: center;
+  animation: toast-in 0.18s ease-out;
+}
+@keyframes toast-in { from { opacity: 0; transform: translate(-50%, -4px); } }
+.fallback {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  margin: 0;
+  text-align: center;
+  color: var(--muted);
+  font-size: var(--text-md);
+}
+.board-tools {
+  position: absolute;
+  z-index: 2;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--float-shadow);
+}
+.tool {
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  height: 2rem;
+  padding: 0 0.75rem;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+.tool:hover { background: var(--bg); }
+.tool[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+
+/* ---------- Rail ---------- */
+.rail {
+  grid-area: rail;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding-right: 6px;
+  padding-bottom: 4px;
+}
+.panel { display: contents; }
+.section { display: grid; gap: 0.75rem; padding-top: 18px; border-top: 1px solid var(--line); }
+.section.first { padding-top: 0; border-top: 0; }
+.label {
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.seg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  padding: 3px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.seg button {
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  height: 2.125rem;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+.seg button:hover { background: var(--bg); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+
+.readout {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.stats { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; }
+.stat { display: grid; gap: 0.125rem; min-width: 0; }
+.num {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: var(--text-lg);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.spark { margin: 0; display: grid; gap: 0.375rem; }
+.spark canvas { display: block; width: 100%; height: 3.25rem; }
+.spark figcaption { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.btn {
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  height: 2.375rem;
+  padding: 0 0.875rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.12s, background-color 0.12s;
+}
+.btn:hover:not(:disabled) { border-color: var(--muted); }
+.btn:disabled { opacity: 0.45; cursor: default; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.primary:hover:not(:disabled) { border-color: var(--accent); filter: brightness(1.1); }
+.btn svg { width: 0.75rem; height: 0.75rem; fill: currentColor; flex: none; }
+
+.transport { display: grid; grid-template-columns: 1.35fr 1fr 1fr 1fr; gap: 0.5rem; }
+.transport .btn { padding: 0 0.5rem; }
+.slider { display: grid; grid-template-columns: 4.5rem minmax(0, 1fr) 4.75rem; align-items: center; gap: 0.75rem; }
+.slider input { width: 100%; margin: 0; accent-color: var(--accent); }
+.slider output { font-family: var(--font-mono); font-size: var(--text-sm); text-align: right; font-variant-numeric: tabular-nums; }
+.toggles { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; }
+.check { display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: var(--text-sm); }
+.check input { width: 1rem; height: 1rem; margin: 0; accent-color: var(--accent); }
+.swatch { display: inline-block; width: 0.75rem; height: 0.75rem; border-radius: 50%; border: 1px solid var(--line); background: radial-gradient(circle at 35% 30%, #FFFFFF, #CFCBC2); }
+
+.patterns { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.pattern {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius);
+  padding: 0.5rem 0.625rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 0.75rem;
+  row-gap: 0.125rem;
+  cursor: pointer;
+}
+.pattern:hover { background: var(--surface); }
+.pattern[aria-current="true"] { background: var(--accent-soft); }
+.pattern-name { font-weight: 700; font-size: var(--text-md); }
+.chip {
+  align-self: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0 0.375rem;
+}
+.pattern[aria-current="true"] .chip { color: var(--accent); border-color: currentColor; }
+.pattern-note { grid-column: 1 / -1; color: var(--muted); font-size: var(--text-sm); }
+
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.row > .grow { flex: 1 1 7rem; }
+select, .field {
+  font: inherit;
+  font-size: var(--text-sm);
+  height: 2.375rem;
+  min-width: 0;
+  padding: 0 0.625rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+}
+.field { font-family: var(--font-mono); }
+.full { width: 100%; }
+.help { margin: 0; color: var(--muted); font-size: var(--text-sm); }
+.error { margin: 0; color: var(--danger); font-size: var(--text-sm); }
+.link { color: var(--accent); font-weight: 700; text-underline-offset: 3px; }
+
+.keys dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.375rem 0.75rem; margin: 0; font-size: var(--text-sm); }
+.keys dt, .keys dd { margin: 0; }
+.keys dd { color: var(--muted); }
+kbd {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: 0.0625rem 0.375rem;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+@media (max-width: 860px) {
+  html, body { height: auto; }
+  .app {
+    height: auto;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+    grid-template-areas: "head" "stage" "rail";
+    gap: 16px;
+  }
+  .stage { height: min(66vh, 36rem); min-height: 18rem; }
+  .rail { overflow: visible; padding-right: 0; }
+  h1 { font-size: 2rem; }
+}
+@media (pointer: coarse) { .keys { display: none; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="masthead">
+    <p class="eyebrow" id="eyebrow">Three dimensions · Carter Bays, 1987</p>
+    <h1>Game of Life in 3D</h1>
+    <p class="rule-sentence" id="ruleSentence">An empty cell with exactly 5 of its 26 neighbors alive is born. A live cell with 4 or 5 live neighbors survives; every other live cell dies.</p>
+  </header>
+
+  <main class="stage" id="stage">
+    <canvas id="view" aria-label="3D view of the simulation. Drag to orbit."></canvas>
+    <p class="hint" id="hint">Drag to orbit · scroll to zoom · right-drag to pan</p>
+    <p class="toast" id="toast" role="status" aria-live="polite" hidden></p>
+    <p class="fallback" id="noGl" hidden>The 3D view needs WebGL, which isn’t available in this browser. The simulation still runs, and the numbers on the right keep updating.</p>
+    <div class="board-tools" role="toolbar" aria-label="View">
+      <button class="tool" id="spin" type="button" aria-pressed="true">Spin</button>
+      <button class="tool" id="resetView" type="button">Reset view</button>
+    </div>
+  </main>
+
+  <aside class="rail" aria-label="Controls">
+    <section class="section first">
+      <div class="seg" role="group" aria-label="Mode">
+        <button id="mode3d" type="button" aria-pressed="true">3D rules</button>
+        <button id="modeStack" type="button" aria-pressed="false">Time stack</button>
+      </div>
+      <p class="help" id="modeHelp">Cells live in a cube and count all 26 neighbors that touch them at a face, an edge or a corner.</p>
+      <div class="readout">
+        <div class="stats">
+          <div class="stat"><span class="label">Generation</span><span class="num" id="gen">0</span></div>
+          <div class="stat"><span class="label">Population</span><span class="num" id="pop">0</span></div>
+        </div>
+        <figure class="spark">
+          <canvas id="spark" aria-hidden="true"></canvas>
+          <figcaption id="sparkCap">Population by generation</figcaption>
+        </figure>
+      </div>
+      <div class="transport">
+        <button class="btn primary" id="play" type="button" aria-pressed="false">
+          <svg id="iconPlay" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 1l9 5-9 5z"/></svg>
+          <svg id="iconPause" viewBox="0 0 12 12" aria-hidden="true" hidden><path d="M2 1h3v10H2zM7 1h3v10H7z"/></svg>
+          <span id="playLabel">Play</span>
+        </button>
+        <button class="btn" id="step" type="button" title="Advance one generation">Step</button>
+        <button class="btn" id="reset" type="button" title="Back to generation 0">Reset</button>
+        <button class="btn" id="clear" type="button" title="Remove every cell">Clear</button>
+      </div>
+      <div class="slider">
+        <label class="label" for="speed">Speed</label>
+        <input type="range" id="speed" min="0" max="9" step="1" value="4">
+        <output id="speedOut" for="speed">8 gen/s</output>
+      </div>
+    </section>
+
+    <div class="panel" id="panel3d">
+      <section class="section">
+        <h2 class="label"><label for="rulePreset">Rule</label></h2>
+        <select class="full" id="rulePreset"></select>
+        <form class="row" id="ruleForm">
+          <label class="sr-only" for="ruleInput">Rulestring</label>
+          <input class="field grow" id="ruleInput" value="B5/S4-5" spellcheck="false" autocomplete="off" aria-describedby="ruleHelp">
+          <button class="btn" type="submit">Apply</button>
+        </form>
+        <p class="help" id="ruleHelp">B lists the neighbor counts that create a cell and S the counts that keep one alive, out of 26. Write ranges like S4-5 and put commas between numbers above 9. Bays’s four-digit form, like 4555, works too.</p>
+        <p class="error" id="ruleErr" role="alert" hidden></p>
+      </section>
+      <section class="section">
+        <h2 class="label">Start from</h2>
+        <ul class="patterns" id="seeds3d"></ul>
+        <div class="row">
+          <button class="btn grow" id="soup3d" type="button">Random soup</button>
+          <label class="sr-only" for="soupSize">Soup block size</label>
+          <select id="soupSize">
+            <option value="8">8³ block</option>
+            <option value="12">12³ block</option>
+            <option value="16" selected>16³ block</option>
+            <option value="24">24³ block</option>
+          </select>
+          <label class="sr-only" for="soupDensity">Soup density</label>
+          <select id="soupDensity">
+            <option value="0.2">20%</option>
+            <option value="0.3" selected>30%</option>
+            <option value="0.4">40%</option>
+            <option value="0.5">50%</option>
+          </select>
+        </div>
+        <p class="help">Under both of Bays’s rules, most random soups burn out or freeze into a few still lifes within about 100 generations.</p>
+      </section>
+      <section class="section">
+        <h2 class="label"><label for="worldSize">World</label></h2>
+        <div class="row">
+          <select class="grow" id="worldSize">
+            <option value="32">32 × 32 × 32 cube</option>
+            <option value="40" selected>40 × 40 × 40 cube</option>
+            <option value="48">48 × 48 × 48 cube</option>
+          </select>
+          <label class="check"><input type="checkbox" id="wrap" checked> Wrap edges</label>
+        </div>
+        <p class="help">With wrapping on, anything that leaves one face comes back through the opposite face.</p>
+      </section>
+    </div>
+
+    <div class="panel" id="panelStack" hidden>
+      <section class="section">
+        <h2 class="label">Patterns</h2>
+        <ul class="patterns" id="patterns2d"></ul>
+        <div class="row"><button class="btn grow" id="soup2d" type="button">Random soup</button></div>
+        <p class="help">Click or tap the board to add or remove a cell in the present layer.</p>
+      </section>
+      <section class="section">
+        <div class="slider">
+          <label class="label" for="depth">History</label>
+          <input type="range" id="depth" min="16" max="64" step="4" value="40">
+          <output id="depthOut" for="depth">40 layers</output>
+        </div>
+      </section>
+    </div>
+
+    <section class="section">
+      <h2 class="label">View</h2>
+      <div class="toggles">
+        <label class="check"><input type="checkbox" id="births" checked> <span class="swatch" aria-hidden="true"></span> White stones for newborn cells</label>
+        <label class="check" id="frameWrap"><input type="checkbox" id="frame" checked> Cube outline</label>
+      </div>
+    </section>
+
+    <section class="section keys">
+      <h2 class="label">Keys</h2>
+      <dl>
+        <dt><kbd>Space</kbd></dt><dd>Play or pause</dd>
+        <dt><kbd>N</kbd></dt><dd>Step one generation</dd>
+        <dt><kbd>R</kbd> <kbd>C</kbd></dt><dd>Reset to generation 0, clear</dd>
+        <dt><kbd>S</kbd></dt><dd>New random soup</dd>
+        <dt><kbd>T</kbd></dt><dd>Switch between 3D rules and Time stack</dd>
+        <dt><kbd>P</kbd> <kbd>V</kbd></dt><dd>Spin on or off, reset the view</dd>
+      </dl>
+    </section>
+
+    <section class="section">
+      <a class="link" id="link2d" href="../">Play the 2D version</a>
+    </section>
+  </aside>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(() => {
+'use strict';
+
+// <sim>
+// ---------- 2D Life on a sparse, unbounded plane (the Time stack) ----------
+const OFF = 8192, SPAN = 16384, LIMIT = 8000;
+const toKey = (x, y) => (x + OFF) * SPAN + (y + OFF);
+const keyX = k => Math.floor(k / SPAN) - OFF;
+const keyY = k => (k % SPAN) - OFF;
+const NB = [];
+for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) if (dx || dy) NB.push(dx * SPAN + dy);
+const LIFE_B = Uint8Array.from([0, 0, 0, 1, 0, 0, 0, 0, 0]);
+const LIFE_S = Uint8Array.from([0, 0, 1, 1, 0, 0, 0, 0, 0]);
+
+function nextGen(cells, born, survive) {
+  const counts = new Map();
+  for (const k of cells) {
+    for (let i = 0; i < 8; i++) {
+      const n = k + NB[i];
+      counts.set(n, (counts.get(n) || 0) + 1);
+    }
+  }
+  const next = new Set(), births = new Set();
+  for (const [k, c] of counts) {
+    if (cells.has(k)) {
+      if (survive[c]) next.add(k);
+    } else if (born[c]) {
+      const x = keyX(k), y = keyY(k);
+      if (x >= -LIMIT && x <= LIMIT && y >= -LIMIT && y <= LIMIT) { next.add(k); births.add(k); }
+    }
+  }
+  return { next, births };
+}
+
+const PATTERNS_2D = [
+  {
+    id: 'gun', name: 'Gosper glider gun', kind: 'Gun', at: [-10, -12],
+    note: 'A fixed tower that throws off a new diagonal staircase every 30 layers.',
+    rows: [
+      '........................O...........',
+      '......................O.O...........',
+      '............OO......OO............OO',
+      '...........O...O....OO............OO',
+      'OO........O.....O...OO..............',
+      'OO........O...O.OO....O.O...........',
+      '..........O.....O.......O...........',
+      '...........O...O....................',
+      '............OO......................',
+    ],
+  },
+  {
+    id: 'glider', name: 'Glider', kind: 'Spaceship', at: [-14, -14],
+    note: 'Climbs a diagonal staircase, one cell over for every 4 layers.',
+    rows: ['.O.', '..O', 'OOO'],
+  },
+  {
+    id: 'lwss', name: 'Lightweight spaceship', kind: 'Spaceship', at: [-20, 0],
+    note: 'Leans out sideways, two cells for every 4 layers.',
+    rows: ['O..O.', '....O', 'O...O', '.OOOO'],
+  },
+  {
+    id: 'pulsar', name: 'Pulsar', kind: 'Oscillator', at: [0, 0],
+    note: 'A straight column whose pattern repeats every 3 layers.',
+    rows: [
+      '..OOO...OOO..', '.............', 'O....O.O....O', 'O....O.O....O', 'O....O.O....O',
+      '..OOO...OOO..', '.............', '..OOO...OOO..', 'O....O.O....O', 'O....O.O....O',
+      'O....O.O....O', '.............', '..OOO...OOO..',
+    ],
+  },
+  {
+    id: 'rpent', name: 'R-pentomino', kind: 'Methuselah', at: [0, 0],
+    note: 'Five cells that branch into a chaotic tree for 1,103 generations.',
+    rows: ['.OO', 'OO.', '.O.'],
+  },
+];
+function plainCells(rows) {
+  const out = [];
+  rows.forEach((row, y) => { for (let x = 0; x < row.length; x++) if (row[x] === 'O') out.push([x, y]); });
+  return out;
+}
+
+// ---------- 3D Life on a dense cube (Moore neighborhood of 26) ----------
+// Cell (x, y, z) lives at index (z * N + y) * N + x. z is height.
+function makeWorld(N) {
+  const n = N * N * N;
+  return { N, cells: new Uint8Array(n), next: new Uint8Array(n), births: new Uint8Array(n), a: new Uint8Array(n), b: new Uint8Array(n), pop: 0 };
+}
+
+// Neighbor counts come from three passes of a 3-wide box sum (x, then y, then z), minus the cell itself.
+function step3(w, rule, wrap) {
+  const { N, cells, next, births, a: A, b: Bf } = w;
+  const n2 = N * N;
+  for (let row = 0; row < n2; row++) {
+    const o = row * N;
+    for (let x = 0; x < N; x++) {
+      let s = cells[o + x];
+      if (x > 0) s += cells[o + x - 1]; else if (wrap) s += cells[o + N - 1];
+      if (x < N - 1) s += cells[o + x + 1]; else if (wrap) s += cells[o];
+      A[o + x] = s;
+    }
+  }
+  for (let z = 0; z < N; z++) {
+    const zo = z * n2;
+    for (let y = 0; y < N; y++) {
+      const o = zo + y * N;
+      const up = y > 0 ? o - N : wrap ? zo + (N - 1) * N : -1;
+      const dn = y < N - 1 ? o + N : wrap ? zo : -1;
+      for (let x = 0; x < N; x++) Bf[o + x] = A[o + x] + (up >= 0 ? A[up + x] : 0) + (dn >= 0 ? A[dn + x] : 0);
+    }
+  }
+  const born = rule.born, survive = rule.survive;
+  let pop = 0;
+  for (let z = 0; z < N; z++) {
+    const o = z * n2;
+    const lo = z > 0 ? o - n2 : wrap ? (N - 1) * n2 : -1;
+    const hi = z < N - 1 ? o + n2 : wrap ? 0 : -1;
+    for (let i = 0; i < n2; i++) {
+      const c = cells[o + i];
+      const n = Bf[o + i] + (lo >= 0 ? Bf[lo + i] : 0) + (hi >= 0 ? Bf[hi + i] : 0) - c;
+      const v = c ? survive[n] : born[n];
+      next[o + i] = v;
+      births[o + i] = v & (c ^ 1);
+      pop += v;
+    }
+  }
+  w.cells = next;
+  w.next = cells;
+  w.pop = pop;
+}
+
+function setCells3(w, list) {
+  const N = w.N;
+  w.cells.fill(0);
+  w.births.fill(0);
+  for (const [x, y, z] of list) {
+    if (x >= 0 && x < N && y >= 0 && y < N && z >= 0 && z < N) w.cells[(z * N + y) * N + x] = 1;
+  }
+  let p = 0;
+  for (let i = 0; i < w.cells.length; i++) p += w.cells[i];
+  w.pop = p;
+}
+
+function parseCounts(str) {
+  if (!str) return [];
+  const parts = /[,-]/.test(str) ? str.split(',') : str.split('');
+  const out = [];
+  for (const p of parts) {
+    if (!p) continue;
+    const m = p.match(/^(\d+)(?:-(\d+))?$/);
+    if (!m) return null;
+    const a = +m[1], b = m[2] != null ? +m[2] : a;
+    if (a > 26 || b > 26 || a > b) return null;
+    for (let i = a; i <= b; i++) out.push(i);
+  }
+  return out;
+}
+function compressCounts(flags) {
+  const d = [];
+  flags.forEach((v, i) => v && d.push(i));
+  const parts = [];
+  for (let i = 0; i < d.length; ) {
+    let j = i;
+    while (j + 1 < d.length && d[j + 1] === d[j] + 1) j++;
+    parts.push(j > i ? `${d[i]}-${d[j]}` : `${d[i]}`);
+    i = j + 1;
+  }
+  return parts.join(',');
+}
+function parseRule3(text) {
+  const s = String(text).replace(/\s+/g, '').toUpperCase();
+  let b, sv, m;
+  const range = (lo, hi) => Array.from({ length: hi - lo + 1 }, (_, i) => lo + i);
+  if ((m = s.match(/^(\d)(\d)(\d)(\d)$/))) {
+    const [el, eu, fl, fu] = m.slice(1).map(Number);
+    if (el > eu || fl > fu) return { error: 'In the four-digit form each pair runs low to high, as in 4555.' };
+    sv = range(el, eu);
+    b = range(fl, fu);
+  } else if ((m = s.match(/^B([\d,-]*)\/?S([\d,-]*)$/))) {
+    b = parseCounts(m[1]);
+    sv = parseCounts(m[2]);
+  } else if ((m = s.match(/^S([\d,-]*)\/?B([\d,-]*)$/))) {
+    sv = parseCounts(m[1]);
+    b = parseCounts(m[2]);
+  } else {
+    return { error: 'Write the rule as B then S, like B5/S4-5, or as four digits, like 4555.' };
+  }
+  if (!b || !sv) return { error: 'Counts run from 0 to 26. Use a dash for ranges and commas between numbers above 9, like S10,12.' };
+  if (b.includes(0)) return { error: 'Rules with B0 fill empty space with life. Remove the 0 after B.' };
+  const born = new Uint8Array(27), survive = new Uint8Array(27);
+  b.forEach(i => { born[i] = 1; });
+  sv.forEach(i => { survive[i] = 1; });
+  const run = flags => {
+    const d = [];
+    flags.forEach((v, i) => v && d.push(i));
+    return d.length && d[d.length - 1] <= 9 && d[d.length - 1] - d[0] === d.length - 1 ? [d[0], d[d.length - 1]] : null;
+  };
+  const rs = run(survive), rb = run(born);
+  return {
+    born, survive,
+    name: `B${compressCounts(born)}/S${compressCounts(survive)}`,
+    bays: rs && rb ? `${rs[0]}${rs[1]}${rb[0]}${rb[1]}` : null,
+    parity: born.every((v, i) => v === i % 2) && survive.every((v, i) => v === 1 - (i % 2)),
+  };
+}
+function describeRule3(r) {
+  if (r.parity) return 'A cell is alive in the next generation when the 27-cell block around it, itself included, holds an odd number of live cells.';
+  const list = flags => { const d = []; flags.forEach((v, i) => v && d.push(i)); return d; };
+  const words = d => {
+    if (d.length >= 3 && d[d.length - 1] - d[0] === d.length - 1) return `${d[0]} to ${d[d.length - 1]}`;
+    return d.length === 1 ? String(d[0]) : d.slice(0, -1).join(', ') + ' or ' + d[d.length - 1];
+  };
+  const b = list(r.born), s = list(r.survive);
+  const birth = b.length
+    ? `An empty cell with ${b.length === 1 ? 'exactly ' : ''}${words(b)} of its 26 neighbors alive is born.`
+    : 'No new cells are ever born.';
+  let live;
+  if (s.length === 27) live = 'Live cells never die.';
+  else if (!s.length) live = 'Every live cell dies after one generation.';
+  else live = `A live cell with ${words(s)} live neighbors survives; every other live cell dies.`;
+  return `${birth} ${live}`;
+}
+
+// Gliders found by exhaustive and random search. Each moves one cell diagonally every 4 generations.
+const GLIDERS = {
+  '4555': [[0, 1, 1], [0, 1, 2], [1, 0, 0], [1, 0, 3], [1, 1, 0], [1, 1, 3], [2, 0, 1], [2, 0, 2], [2, 1, 1], [2, 1, 2]],
+  '5766': [[0, 1, 0], [0, 1, 1], [0, 2, 0], [0, 2, 1], [1, 0, 0], [1, 0, 1], [1, 1, 0], [1, 1, 1], [2, 2, 0], [2, 2, 1]],
+};
+const REPLICATOR = [[0, 0, 0], [1, 0, 0], [2, 0, 0], [0, 1, 0], [0, 2, 0], [0, 0, 1], [0, 0, 2]];
+const PARITY_RULE = 'B1,3,5,7,9,11,13,15,17,19,21,23,25/S0,2,4,6,8,10,12,14,16,18,20,22,24,26';
+
+function rotZ(shape, turns) {
+  let s = shape;
+  for (let i = 0; i < turns; i++) s = s.map(([x, y, z]) => [-y, x, z]);
+  const mx = Math.min(...s.map(p => p[0])), my = Math.min(...s.map(p => p[1]));
+  return s.map(([x, y, z]) => [x - mx, y - my, z]);
+}
+// Four copies on separate levels, each turned 90 degrees, so they fan out in four directions and never meet.
+function gliderFleet(N, shape) {
+  const th = Math.max(...shape.map(p => p[2])) + 1;
+  const c = Math.floor(N / 2) - 1, out = [];
+  for (let k = 0; k < 4; k++) {
+    const z0 = Math.round(((k + 0.5) * N) / 4 - th / 2);
+    for (const [x, y, z] of rotZ(shape, k)) out.push([c + x, c + y, z0 + z]);
+  }
+  return out;
+}
+function centered(N, shape) {
+  const c = Math.floor(N / 2) - 1;
+  return shape.map(([x, y, z]) => [c + x, c + y, c + z]);
+}
+function soup3(N, size, density, rand) {
+  const s = Math.min(size, N), o = Math.floor((N - s) / 2), out = [];
+  for (let z = 0; z < s; z++) for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) if (rand() < density) out.push([o + x, o + y, o + z]);
+  return out;
+}
+
+const SEEDS_3D = [
+  {
+    id: 'g4555', name: 'Glider fleet', kind: 'Life 4555', rule: '4555',
+    note: 'Four 10-cell gliders, four layers thick, on separate levels. Each moves one cell diagonally every 4 generations.',
+    cells: N => gliderFleet(N, GLIDERS['4555']),
+  },
+  {
+    id: 'g5766', name: 'Glider fleet', kind: 'Life 5766', rule: '5766',
+    note: 'Four 10-cell gliders, two layers thick, moving at the same speed.',
+    cells: N => gliderFleet(N, GLIDERS['5766']),
+  },
+  {
+    id: 'rep', name: 'Replicator seed', kind: 'Parity', rule: PARITY_RULE,
+    note: 'Seven cells that become 27 copies of themselves at generations 4, 8 and 16.',
+    cells: N => centered(N, REPLICATOR),
+  },
+];
+// </sim>
+
+const RULE_PRESETS = [
+  { name: 'Life 4555', label: 'Life 4555 · B5/S4-5', rule: '4555' },
+  { name: 'Life 5766', label: 'Life 5766 · B6/S5-7', rule: '5766' },
+  { name: 'Parity replicator', label: 'Parity replicator · odd births', rule: PARITY_RULE },
+];
+
+const $ = id => document.getElementById(id);
+const fmt = n => n.toLocaleString('en-US');
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const coarse = matchMedia('(pointer: coarse)').matches;
+const SPEEDS = [1, 2, 4, 6, 8, 12, 20, 30, 45, 60];
+const CAP = 60000;
+const STACK_W = 64, STACK_HALF = 32, LAYER_H = 0.5, LIFT = 0.15;
+
+const opts = { mode: '3d', running: false, speedIdx: 4, births: true, frame: true, spin: !reduceMotion, wrap: true, depth: 40 };
+const newHist = n => ({ list: [n], stride: 1, peak: n, peakGen: 0 });
+function pushHist(h, gen, n) {
+  if (n > h.peak) { h.peak = n; h.peakGen = gen; }
+  if (gen % h.stride === 0) {
+    h.list.push(n);
+    if (h.list.length > 4000) { h.list = h.list.filter((_, i) => i % 2 === 0); h.stride *= 2; }
+  }
+}
+
+const S3 = { N: 40, world: makeWorld(40), rule: parseRule3('4555'), start: null, gen: 0, h: newHist(0), seed: null, seedId: null };
+const S2 = { cells: new Set(), births: new Set(), start: null, gen: 0, layers: [], h: newHist(0), patternId: null };
+let dirty = true, sparkDirty = true, capWarned = false;
+let colors = {};
+
+// ---------- Scene ----------
+const stage = $('stage'), canvas = $('view');
+const view = { w: 300, h: 300, dpr: 1 };
+let gl = false, renderer, scene, camera, controls, sun, boardGroup = null, frameLines = null, sphereMesh, lensMesh;
+let C_BLACK, C_WHITE, fadeColors = [], needsRender = true;
+
+function readColors() {
+  const cs = getComputedStyle(document.documentElement);
+  const v = n => cs.getPropertyValue(n).trim();
+  colors = {
+    board: v('--board'), boardSide: v('--board-side'), grid: v('--board-grid'), star: v('--board-star'), grain: v('--board-grain'),
+    frame: v('--frame'), fade: v('--fade'), accent: v('--accent'), accentSoft: v('--accent-soft'), line: v('--line'), surface: v('--surface'),
+  };
+}
+
+function mulberry32(a) {
+  return () => {
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const linear = hex => new THREE.Color(hex).convertSRGBToLinear();
+
+function initScene() {
+  if (typeof THREE === 'undefined' || !THREE.OrbitControls) throw new Error('three.js did not load');
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
+  renderer.setClearColor(0x000000, 0);
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(40, 1, 0.5, 1000);
+  controls = new THREE.OrbitControls(camera, canvas);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.autoRotate = opts.spin;
+  controls.autoRotateSpeed = 0.6;
+  controls.maxPolarAngle = Math.PI * 0.495;
+  controls.addEventListener('change', () => { needsRender = true; });
+  controls.addEventListener('start', () => { dismissHint(); if (opts.spin) setSpin(false); });
+
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x8a6a3a, 0.62));
+  sun = new THREE.DirectionalLight(0xffffff, 0.95);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.bias = -0.0006;
+  scene.add(sun, sun.target);
+
+  C_BLACK = linear(0x1c1d22);
+  C_WHITE = linear(0xeeede7);
+  const stoneMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.36, metalness: 0 });
+  const makeMesh = geo => {
+    const mesh = new THREE.InstancedMesh(geo, stoneMat, CAP);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    const m = mesh.instanceMatrix.array;
+    for (let j = 0; j < CAP; j++) { const o = j * 16; m[o] = m[o + 5] = m[o + 10] = m[o + 15] = 1; }
+    mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(CAP * 3), 3);
+    mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    mesh.count = 0;
+    mesh.castShadow = true;
+    mesh.frustumCulled = false;
+    scene.add(mesh);
+    return mesh;
+  };
+  sphereMesh = makeMesh(new THREE.SphereGeometry(0.42, 14, 10));
+  const lens = new THREE.SphereGeometry(0.46, 16, 8);
+  lens.scale(1, 0.45, 1); // Go stones are biconvex lenses
+  lensMesh = makeMesh(lens);
+  gl = true;
+}
+
+function buildBoard(size) {
+  if (!gl) return;
+  if (boardGroup) {
+    scene.remove(boardGroup);
+    boardGroup.traverse(o => {
+      if (o.geometry) o.geometry.dispose();
+      if (o.material) [].concat(o.material).forEach(mt => { if (mt.map) mt.map.dispose(); mt.dispose(); });
+    });
+  }
+  const px = 16, S = (size + 1) * px;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = S;
+  const g = cv.getContext('2d');
+  g.fillStyle = colors.board;
+  g.fillRect(0, 0, S, S);
+  const rnd = mulberry32(1987);
+  g.strokeStyle = colors.grain;
+  for (let x = -4; x < S + 4; x += 1 + rnd() * 5) {
+    g.globalAlpha = 0.03 + rnd() * 0.08;
+    g.lineWidth = 0.5 + rnd() * 1.8;
+    const amp = rnd() * 3, freq = 0.002 + rnd() * 0.008, ph = rnd() * 6.283;
+    g.beginPath();
+    for (let y = 0; y <= S + 32; y += 32) {
+      const xx = x + Math.sin(y * freq + ph) * amp;
+      if (y === 0) g.moveTo(xx, y); else g.lineTo(xx, y);
+    }
+    g.stroke();
+  }
+  g.globalAlpha = 1;
+  g.strokeStyle = colors.grid;
+  g.lineWidth = 1.6;
+  g.beginPath();
+  for (let i = 0; i < size; i++) {
+    const p = (i + 1) * px;
+    g.moveTo(p, px); g.lineTo(p, S - px);
+    g.moveTo(px, p); g.lineTo(S - px, p);
+  }
+  g.stroke();
+  const c = Math.floor(size / 2);
+  g.fillStyle = colors.star;
+  g.beginPath();
+  for (let i = 0; i < size; i++) for (let j = 0; j < size; j++) {
+    if ((i - c) % 6 || (j - c) % 6) continue;
+    const x = (i + 1) * px, y = (j + 1) * px;
+    g.moveTo(x + 3.2, y);
+    g.arc(x, y, 3.2, 0, Math.PI * 2);
+  }
+  g.fill();
+  const tex = new THREE.CanvasTexture(cv);
+  tex.encoding = THREE.sRGBEncoding;
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  const side = new THREE.MeshStandardMaterial({ color: linear(colors.boardSide), roughness: 0.8 });
+  const top = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.72 });
+  const slab = new THREE.Mesh(new THREE.BoxGeometry(size + 1, 1.2, size + 1), [side, side, top, side, side, side]);
+  slab.position.y = -0.6;
+  slab.receiveShadow = true;
+  boardGroup = new THREE.Group();
+  boardGroup.add(slab);
+  scene.add(boardGroup);
+  needsRender = true;
+}
+
+function buildFrame() {
+  if (!gl) return;
+  if (frameLines) { scene.remove(frameLines); frameLines.geometry.dispose(); frameLines.material.dispose(); }
+  const N = S3.N;
+  frameLines = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(N, N, N)),
+    new THREE.LineBasicMaterial({ color: linear(colors.frame), transparent: true, opacity: 0.55 })
+  );
+  frameLines.position.set(0, N / 2 + LIFT, 0);
+  frameLines.visible = opts.mode === '3d' && opts.frame;
+  scene.add(frameLines);
+  needsRender = true;
+}
+
+function buildFade() {
+  if (!gl) return;
+  const target = linear(colors.fade);
+  fadeColors = [];
+  for (let a = 0; a < 64; a++) {
+    const t = Math.pow(a / Math.max(1, opts.depth - 1), 0.85) * 0.92;
+    fadeColors.push(C_BLACK.clone().lerp(target, Math.min(1, t)));
+  }
+}
+
+function placeSun() {
+  if (!gl) return;
+  const size = opts.mode === '3d' ? S3.N : STACK_W;
+  const center = new THREE.Vector3(0, opts.mode === '3d' ? S3.N / 2 : opts.depth * LAYER_H * 0.4, 0);
+  sun.target.position.copy(center);
+  sun.position.copy(center).add(new THREE.Vector3(-0.55, 1.35, 0.7).multiplyScalar(size * 1.6));
+  const cam = sun.shadow.camera, r = size * 0.95;
+  cam.left = -r; cam.right = r; cam.top = r; cam.bottom = -r;
+  cam.near = 1;
+  cam.far = size * 5;
+  cam.updateProjectionMatrix();
+  needsRender = true;
+}
+
+function frameCamera() {
+  if (!gl) return;
+  const aspect = view.w / view.h;
+  const dir = new THREE.Vector3(1, 0.72, 1.18).normalize();
+  let target, dist;
+  if (opts.mode === '3d') {
+    target = new THREE.Vector3(0, S3.N * 0.45, 0);
+    dist = S3.N * 2.3;
+  } else {
+    target = new THREE.Vector3(0, opts.depth * LAYER_H * 0.35, 0);
+    dist = STACK_W * 1.6;
+  }
+  if (aspect < 1) dist /= Math.pow(aspect, 0.85);
+  camera.position.copy(target).addScaledVector(dir, dist);
+  controls.target.copy(target);
+  camera.near = dist / 60;
+  camera.far = dist * 8;
+  camera.updateProjectionMatrix();
+  controls.minDistance = dist * 0.2;
+  controls.maxDistance = dist * 3;
+  controls.update();
+  needsRender = true;
+}
+
+function writeInstances() {
+  if (!gl) return;
+  let shown = 0, total = 0;
+  if (opts.mode === '3d') {
+    const w = S3.world, N = w.N, n2 = N * N, half = (N - 1) / 2, cells = w.cells, births = w.births;
+    const m = sphereMesh.instanceMatrix.array, c = sphereMesh.instanceColor.array, mark = opts.births;
+    for (let i = 0; i < cells.length; i++) {
+      if (!cells[i]) continue;
+      total++;
+      if (shown >= CAP) continue;
+      const o = shown * 16, p = shown * 3;
+      m[o + 12] = (i % N) - half;
+      m[o + 13] = ((i / n2) | 0) + 0.5 + LIFT;
+      m[o + 14] = (((i / N) | 0) % N) - half;
+      const col = mark && births[i] ? C_WHITE : C_BLACK;
+      c[p] = col.r; c[p + 1] = col.g; c[p + 2] = col.b;
+      shown++;
+    }
+    sphereMesh.count = shown;
+    sphereMesh.instanceMatrix.needsUpdate = true;
+    sphereMesh.instanceColor.needsUpdate = true;
+  } else {
+    const m = lensMesh.instanceMatrix.array, c = lensMesh.instanceColor.array, mark = opts.births;
+    for (let a = 0; a < S2.layers.length; a++) {
+      const L = S2.layers[a], y = 0.21 + a * LAYER_H, base = fadeColors[a] || fadeColors[fadeColors.length - 1];
+      total += L.xs.length;
+      for (let k = 0; k < L.xs.length && shown < CAP; k++) {
+        const o = shown * 16, p = shown * 3;
+        m[o + 12] = L.xs[k] + 0.5;
+        m[o + 13] = y;
+        m[o + 14] = L.ys[k] + 0.5;
+        const col = a === 0 ? (mark && L.born[k] ? C_WHITE : C_BLACK) : base;
+        c[p] = col.r; c[p + 1] = col.g; c[p + 2] = col.b;
+        shown++;
+      }
+    }
+    lensMesh.count = shown;
+    lensMesh.instanceMatrix.needsUpdate = true;
+    lensMesh.instanceColor.needsUpdate = true;
+  }
+  if (total > CAP && !capWarned) {
+    capWarned = true;
+    toast(`Showing ${fmt(CAP)} of ${fmt(total)} stones so the view stays smooth.`);
+  }
+  needsRender = true;
+}
+
+// ---------- Population chart ----------
+const sparkCv = $('spark'), sctx = sparkCv.getContext('2d');
+const spark = { w: 300, h: 52 };
+function drawSpark() {
+  const h = opts.mode === '3d' ? S3.h : S2.h;
+  const { w, h: ht } = spark, g = sctx, H = h.list, n = H.length;
+  g.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
+  g.clearRect(0, 0, w, ht);
+  g.strokeStyle = colors.line;
+  g.lineWidth = 1;
+  g.beginPath();
+  g.moveTo(0, ht - 0.5);
+  g.lineTo(w, ht - 0.5);
+  g.stroke();
+  let max = 1;
+  for (const v of H) if (v > max) max = v;
+  const top = 4, ih = ht - top - 1.5;
+  const yOf = v => top + ih - (v / max) * ih;
+  const pts = [];
+  if (n === 1) pts.push([0, yOf(H[0])], [w, yOf(H[0])]);
+  else if (n <= w) for (let i = 0; i < n; i++) pts.push([(i / (n - 1)) * w, yOf(H[i])]);
+  else {
+    const cols = Math.floor(w);
+    for (let c = 0; c < cols; c++) {
+      const a = Math.floor((c * n) / cols), b = Math.max(a + 1, Math.floor(((c + 1) * n) / cols));
+      let m = 0;
+      for (let i = a; i < b; i++) if (H[i] > m) m = H[i];
+      pts.push([(c / (cols - 1)) * w, yOf(m)]);
+    }
+  }
+  g.beginPath();
+  g.moveTo(pts[0][0], ht - 1);
+  for (const [x, y] of pts) g.lineTo(x, y);
+  g.lineTo(pts[pts.length - 1][0], ht - 1);
+  g.closePath();
+  g.fillStyle = colors.accentSoft;
+  g.fill();
+  g.beginPath();
+  pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
+  g.strokeStyle = colors.accent;
+  g.lineWidth = 1.5;
+  g.lineJoin = 'round';
+  g.stroke();
+  const [ex, ey] = pts[pts.length - 1], dx = Math.min(ex, w - 4);
+  g.beginPath(); g.arc(dx, ey, 3.5, 0, Math.PI * 2); g.fillStyle = colors.surface; g.fill();
+  g.beginPath(); g.arc(dx, ey, 2.5, 0, Math.PI * 2); g.fillStyle = colors.accent; g.fill();
+  $('sparkCap').textContent = h.peak
+    ? `Population by generation · peak ${fmt(h.peak)} at gen ${fmt(h.peakGen)}`
+    : 'Population by generation';
+}
+
+const curGen = () => (opts.mode === '3d' ? S3.gen : S2.gen);
+const curPop = () => (opts.mode === '3d' ? S3.world.pop : S2.cells.size);
+function updateReadout() {
+  $('gen').textContent = fmt(curGen());
+  $('pop').textContent = fmt(curPop());
+  $('reset').disabled = curGen() === 0 || !(opts.mode === '3d' ? S3.start : S2.start);
+}
+
+// ---------- Simulation ----------
+function snapLayer() {
+  const xs = [], ys = [], born = [];
+  for (const k of S2.cells) {
+    const x = keyX(k), y = keyY(k);
+    if (x < -STACK_HALF || x >= STACK_HALF || y < -STACK_HALF || y >= STACK_HALF) continue;
+    xs.push(x); ys.push(y); born.push(S2.births.has(k) ? 1 : 0);
+  }
+  return { xs: Int16Array.from(xs), ys: Int16Array.from(ys), born: Uint8Array.from(born) };
+}
+
+function doStep() {
+  if (opts.mode === '3d') {
+    if (S3.gen === 0) S3.start = S3.world.cells.slice();
+    step3(S3.world, S3.rule, opts.wrap);
+    S3.gen++;
+    pushHist(S3.h, S3.gen, S3.world.pop);
+  } else {
+    if (S2.gen === 0) S2.start = new Set(S2.cells);
+    const { next, births } = nextGen(S2.cells, LIFE_B, LIFE_S);
+    S2.cells = next;
+    S2.births = births;
+    S2.gen++;
+    S2.layers.unshift(snapLayer());
+    if (S2.layers.length > opts.depth) S2.layers.length = opts.depth;
+    pushHist(S2.h, S2.gen, next.size);
+  }
+  dirty = sparkDirty = true;
+}
+
+let acc = 0, lastT = 0;
+function setRunning(on) {
+  if (on && !curPop()) { toast('Nothing is alive. Pick a starting pattern or a random soup.'); on = false; }
+  opts.running = on;
+  if (on) acc = 1;
+  $('play').setAttribute('aria-pressed', String(on));
+  $('playLabel').textContent = on ? 'Pause' : 'Play';
+  $('iconPlay').hidden = on;
+  $('iconPause').hidden = !on;
+}
+function stepOnce() {
+  setRunning(false);
+  if (!curPop()) { toast('Nothing is alive. Pick a starting pattern or a random soup.'); return; }
+  doStep();
+  if (!curPop()) toast(`Every cell died out at generation ${fmt(curGen())}.`);
+}
+function resetToStart() {
+  if (opts.mode === '3d') {
+    if (!S3.start || !S3.gen) return;
+    const w = S3.world;
+    w.cells.set(S3.start);
+    w.births.fill(0);
+    let p = 0;
+    for (let i = 0; i < w.cells.length; i++) p += w.cells[i];
+    w.pop = p;
+    S3.gen = 0; S3.start = null; S3.h = newHist(p);
+  } else {
+    if (!S2.start || !S2.gen) return;
+    S2.cells = new Set(S2.start);
+    S2.births = new Set();
+    S2.gen = 0; S2.start = null; S2.h = newHist(S2.cells.size);
+    S2.layers = [snapLayer()];
+  }
+  dirty = sparkDirty = true;
+}
+function clearAll() {
+  setRunning(false);
+  if (opts.mode === '3d') {
+    setCells3(S3.world, []);
+    S3.gen = 0; S3.start = null; S3.h = newHist(0); S3.seed = null; S3.seedId = null;
+    markActive();
+  } else {
+    S2.cells = new Set(); S2.births = new Set();
+    S2.gen = 0; S2.start = null; S2.h = newHist(0); S2.layers = []; S2.patternId = null;
+    markActive();
+  }
+  dirty = sparkDirty = true;
+}
+
+function load3D(list) {
+  setCells3(S3.world, list);
+  S3.gen = 0; S3.start = null; S3.h = newHist(S3.world.pop);
+  capWarned = false;
+  dirty = sparkDirty = true;
+}
+function loadSeed3(id) {
+  const s = SEEDS_3D.find(q => q.id === id);
+  if (!s) return;
+  const r = parseRule3(s.rule);
+  const changed = r.name !== S3.rule.name;
+  applyRule3(r);
+  S3.seed = { type: 'preset', id };
+  S3.seedId = id;
+  load3D(s.cells(S3.N));
+  markActive();
+  if (changed) toast(`Rule set to ${presetFor(r) || r.name} for this pattern.`);
+}
+function soup3D(quiet) {
+  const size = Math.min(+$('soupSize').value, S3.N), density = +$('soupDensity').value;
+  S3.seed = { type: 'soup', size, density };
+  S3.seedId = null;
+  load3D(soup3(S3.N, size, density, Math.random));
+  markActive();
+  if (!quiet) toast(`Scattered ${fmt(S3.world.pop)} cells through a ${size}³ block.`);
+}
+function reseed3() {
+  if (!S3.seed) return load3D([]);
+  if (S3.seed.type === 'preset') {
+    const s = SEEDS_3D.find(q => q.id === S3.seed.id);
+    load3D(s.cells(S3.N));
+  } else {
+    load3D(soup3(S3.N, Math.min(S3.seed.size, S3.N), S3.seed.density, Math.random));
+  }
+}
+
+function load2D(id) {
+  const p = PATTERNS_2D.find(q => q.id === id);
+  if (!p) return;
+  const pts = plainCells(p.rows);
+  const w = Math.max(...pts.map(q => q[0])) + 1, h = Math.max(...pts.map(q => q[1])) + 1;
+  const ox = p.at[0] - Math.floor(w / 2), oy = p.at[1] - Math.floor(h / 2);
+  S2.cells = new Set(pts.map(([x, y]) => toKey(x + ox, y + oy)));
+  S2.births = new Set();
+  S2.gen = 0; S2.start = null; S2.h = newHist(S2.cells.size);
+  S2.layers = [snapLayer()];
+  S2.patternId = id;
+  capWarned = false;
+  markActive();
+  dirty = sparkDirty = true;
+}
+function soup2D() {
+  const cells = new Set();
+  for (let y = -12; y < 12; y++) for (let x = -12; x < 12; x++) if (Math.random() < 0.35) cells.add(toKey(x, y));
+  S2.cells = cells;
+  S2.births = new Set();
+  S2.gen = 0; S2.start = null; S2.h = newHist(cells.size);
+  S2.layers = [snapLayer()];
+  S2.patternId = null;
+  capWarned = false;
+  markActive();
+  dirty = sparkDirty = true;
+  toast(`Scattered ${fmt(cells.size)} cells over a 24 × 24 patch.`);
+}
+function toggle2D(x, y) {
+  const k = toKey(x, y);
+  if (S2.cells.has(k)) { S2.cells.delete(k); S2.births.delete(k); }
+  else S2.cells.add(k);
+  if (S2.gen === 0) S2.h = newHist(S2.cells.size);
+  if (S2.layers.length) S2.layers[0] = snapLayer(); else S2.layers = [snapLayer()];
+  dirty = sparkDirty = true;
+}
+
+// ---------- Rules and copy ----------
+function presetFor(r) {
+  const p = RULE_PRESETS.find(q => parseRule3(q.rule).name === r.name);
+  return p ? p.name : '';
+}
+function applyRule3(r) {
+  S3.rule = r;
+  $('ruleInput').value = r.name;
+  const idx = RULE_PRESETS.findIndex(q => parseRule3(q.rule).name === r.name);
+  $('rulePreset').selectedIndex = idx >= 0 ? idx : RULE_PRESETS.length;
+  $('ruleErr').hidden = true;
+  updateCopy();
+}
+function updateCopy() {
+  if (opts.mode === '3d') {
+    $('eyebrow').textContent = 'Three dimensions · Carter Bays, 1987';
+    $('ruleSentence').textContent = describeRule3(S3.rule);
+    $('modeHelp').textContent = 'Cells live in a cube and count all 26 neighbors that touch them at a face, an edge or a corner.';
+    $('hint').textContent = coarse ? 'Drag to orbit · pinch to zoom' : 'Drag to orbit · scroll to zoom · right-drag to pan';
+  } else {
+    $('eyebrow').textContent = 'Space-time view · Conway’s rule, B3/S23';
+    $('ruleSentence').textContent = 'Ordinary 2D Life with every generation stacked on the one before. The present sits on the board and the past rises above it.';
+    $('modeHelp').textContent = 'Each layer of stones is one generation. Moving patterns lean, and oscillators stand straight.';
+    $('hint').textContent = coarse ? 'Tap the board to add or remove a cell · drag to orbit' : 'Click the board to add or remove a cell · drag to orbit';
+  }
+}
+
+const seedList = $('seeds3d'), patList = $('patterns2d');
+function patternButton(p, onClick) {
+  const li = document.createElement('li');
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'pattern';
+  b.dataset.id = p.id;
+  const name = document.createElement('span');
+  name.className = 'pattern-name';
+  name.textContent = p.name;
+  const chip = document.createElement('span');
+  chip.className = 'chip';
+  chip.textContent = p.kind;
+  const note = document.createElement('span');
+  note.className = 'pattern-note';
+  note.textContent = p.note;
+  b.append(name, chip, note);
+  b.addEventListener('click', onClick);
+  li.append(b);
+  return li;
+}
+SEEDS_3D.forEach(s => seedList.append(patternButton(s, () => loadSeed3(s.id))));
+PATTERNS_2D.forEach(p => patList.append(patternButton(p, () => load2D(p.id))));
+function markActive() {
+  seedList.querySelectorAll('.pattern').forEach(b => b.setAttribute('aria-current', String(b.dataset.id === S3.seedId)));
+  patList.querySelectorAll('.pattern').forEach(b => b.setAttribute('aria-current', String(b.dataset.id === S2.patternId)));
+}
+const presetSel = $('rulePreset');
+RULE_PRESETS.forEach(p => presetSel.add(new Option(p.label, p.rule)));
+const customOpt = new Option('Custom rule', '');
+customOpt.disabled = true;
+presetSel.add(customOpt);
+
+// ---------- Toasts and modes ----------
+let toastTimer = 0;
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.hidden = false;
+  dismissHint();
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.hidden = true; }, 3800);
+}
+function dismissHint() { $('hint').hidden = true; }
+
+function setSpin(on) {
+  opts.spin = on;
+  $('spin').setAttribute('aria-pressed', String(on));
+  if (gl) controls.autoRotate = on;
+}
+function setSpeed(i) {
+  opts.speedIdx = clamp(i, 0, SPEEDS.length - 1);
+  $('speed').value = String(opts.speedIdx);
+  $('speedOut').textContent = `${SPEEDS[opts.speedIdx]} gen/s`;
+}
+function setDepth(d) {
+  opts.depth = clamp(d, 16, 64);
+  $('depth').value = String(opts.depth);
+  $('depthOut').textContent = `${opts.depth} layers`;
+  if (S2.layers.length > opts.depth) S2.layers.length = opts.depth;
+  buildFade();
+  dirty = true;
+}
+function setMode(m, keepCamera) {
+  opts.mode = m;
+  $('mode3d').setAttribute('aria-pressed', String(m === '3d'));
+  $('modeStack').setAttribute('aria-pressed', String(m === 'stack'));
+  $('panel3d').hidden = m !== '3d';
+  $('panelStack').hidden = m !== 'stack';
+  $('frameWrap').hidden = m !== '3d';
+  updateCopy();
+  $('hint').hidden = false;
+  if (gl) {
+    sphereMesh.visible = m === '3d';
+    lensMesh.visible = m === 'stack';
+    buildBoard(m === '3d' ? S3.N : STACK_W);
+    if (frameLines) frameLines.visible = m === '3d' && opts.frame;
+    placeSun();
+    if (!keepCamera) frameCamera();
+  }
+  capWarned = false;
+  dirty = sparkDirty = true;
+}
+function setWorldSize(N) {
+  S3.N = N;
+  S3.world = makeWorld(N);
+  $('worldSize').value = String(N);
+  reseed3();
+  if (gl) {
+    buildFrame();
+    if (opts.mode === '3d') { buildBoard(N); placeSun(); frameCamera(); }
+  }
+}
+
+// ---------- Events ----------
+$('play').addEventListener('click', () => setRunning(!opts.running));
+$('step').addEventListener('click', stepOnce);
+$('reset').addEventListener('click', resetToStart);
+$('clear').addEventListener('click', clearAll);
+$('speed').addEventListener('input', e => setSpeed(+e.target.value));
+$('depth').addEventListener('input', e => setDepth(+e.target.value));
+$('mode3d').addEventListener('click', () => opts.mode !== '3d' && setMode('3d'));
+$('modeStack').addEventListener('click', () => opts.mode !== 'stack' && setMode('stack'));
+$('spin').addEventListener('click', () => setSpin(!opts.spin));
+$('resetView').addEventListener('click', frameCamera);
+$('births').addEventListener('change', e => { opts.births = e.target.checked; dirty = true; });
+$('frame').addEventListener('change', e => {
+  opts.frame = e.target.checked;
+  if (frameLines) frameLines.visible = opts.mode === '3d' && opts.frame;
+  needsRender = true;
+});
+$('wrap').addEventListener('change', e => { opts.wrap = e.target.checked; });
+$('worldSize').addEventListener('change', e => setWorldSize(+e.target.value));
+$('soup3d').addEventListener('click', () => soup3D());
+$('soup2d').addEventListener('click', soup2D);
+presetSel.addEventListener('change', () => {
+  if (!presetSel.value) return;
+  const r = parseRule3(presetSel.value);
+  applyRule3(r);
+  toast(`Rule set to ${presetFor(r) || r.name}.`);
+});
+$('ruleForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const r = parseRule3($('ruleInput').value);
+  if (r.error) { $('ruleErr').textContent = r.error; $('ruleErr').hidden = false; return; }
+  applyRule3(r);
+  const name = presetFor(r);
+  toast(`Rule set to ${name ? `${name} (${r.name})` : r.name}.`);
+});
+
+// A click or tap that doesn't drag toggles a cell on the board in Time stack mode.
+let down = null;
+const raycaster = typeof THREE !== 'undefined' ? new THREE.Raycaster() : null;
+canvas.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; dismissHint(); });
+canvas.addEventListener('pointerup', e => {
+  if (!down || !gl || opts.mode !== 'stack' || e.button !== 0) { down = null; return; }
+  const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y), held = performance.now() - down.t;
+  down = null;
+  if (moved > 6 || held > 450) return;
+  const r = canvas.getBoundingClientRect();
+  const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hit = new THREE.Vector3();
+  if (!raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit)) return;
+  const x = Math.floor(hit.x), y = Math.floor(hit.z);
+  if (x < -STACK_HALF || x >= STACK_HALF || y < -STACK_HALF || y >= STACK_HALF) return;
+  toggle2D(x, y);
+});
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+document.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const t = e.target, tag = t.tagName;
+  if (tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable) return;
+  if (tag === 'INPUT' && t.type !== 'checkbox') return;
+  switch (e.key) {
+    case ' ':
+      if (tag === 'BUTTON' || tag === 'INPUT') return;
+      setRunning(!opts.running);
+      break;
+    case 'n': case 'N': stepOnce(); break;
+    case 'r': case 'R': resetToStart(); break;
+    case 'c': case 'C': clearAll(); break;
+    case 's': case 'S': if (opts.mode === '3d') soup3D(); else soup2D(); break;
+    case 't': case 'T': setMode(opts.mode === '3d' ? 'stack' : '3d'); break;
+    case 'p': case 'P': setSpin(!opts.spin); break;
+    case 'v': case 'V': frameCamera(); break;
+    default: return;
+  }
+  e.preventDefault();
+});
+
+// ---------- Sizing and theme ----------
+function measure() {
+  const r = stage.getBoundingClientRect();
+  view.w = Math.max(1, r.width);
+  view.h = Math.max(1, r.height);
+  view.dpr = Math.min(window.devicePixelRatio || 1, 2);
+  if (gl) {
+    renderer.setPixelRatio(view.dpr);
+    renderer.setSize(view.w, view.h, false);
+    camera.aspect = view.w / view.h;
+    camera.updateProjectionMatrix();
+    needsRender = true;
+  }
+}
+function measureSpark() {
+  const r = sparkCv.getBoundingClientRect();
+  spark.w = Math.max(1, r.width);
+  spark.h = Math.max(1, r.height);
+  sparkCv.width = Math.round(spark.w * view.dpr);
+  sparkCv.height = Math.round(spark.h * view.dpr);
+  sparkDirty = true;
+}
+function onTheme() {
+  readColors();
+  if (gl) {
+    buildBoard(opts.mode === '3d' ? S3.N : STACK_W);
+    buildFrame();
+    buildFade();
+  }
+  dirty = sparkDirty = true;
+}
+new ResizeObserver(() => { measure(); measureSpark(); }).observe(stage);
+new ResizeObserver(measureSpark).observe(sparkCv);
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', onTheme);
+new MutationObserver(onTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+// ---------- Main loop ----------
+function loop(t) {
+  if (opts.running) {
+    const dt = lastT ? Math.min(250, t - lastT) : 16;
+    acc += (dt * SPEEDS[opts.speedIdx]) / 1000;
+    const t0 = performance.now();
+    while (acc >= 1) {
+      doStep();
+      acc -= 1;
+      if (!curPop()) {
+        setRunning(false);
+        toast(`Every cell died out at generation ${fmt(curGen())}.`);
+        break;
+      }
+      if (performance.now() - t0 > 12) { acc = Math.min(acc, 1); break; }
+    }
+  }
+  lastT = t;
+  if (dirty) {
+    writeInstances();
+    updateReadout();
+    dirty = false;
+  }
+  if (sparkDirty) { drawSpark(); sparkDirty = false; }
+  if (gl) {
+    if (controls.update()) needsRender = true;
+    if (needsRender) { renderer.render(scene, camera); needsRender = false; }
+  }
+  requestAnimationFrame(loop);
+}
+
+// ---------- Live updates keep the simulation as it was ----------
+function liveIndices(arr) { const out = []; for (let i = 0; i < arr.length; i++) if (arr[i]) out.push(i); return out; }
+window.claude?.hot?.snapshot?.(() => ({
+  mode: opts.mode, running: opts.running, speedIdx: opts.speedIdx, births: opts.births, frame: opts.frame,
+  spin: opts.spin, wrap: opts.wrap, depth: opts.depth,
+  s3: {
+    N: S3.N, rule: S3.rule.name, gen: S3.gen, h: S3.h, seed: S3.seed, seedId: S3.seedId,
+    cells: liveIndices(S3.world.cells), start: S3.start ? liveIndices(S3.start) : null,
+  },
+  s2: { cells: [...S2.cells], start: S2.start ? [...S2.start] : null, gen: S2.gen, h: S2.h, patternId: S2.patternId },
+  cam: gl ? { p: camera.position.toArray(), t: controls.target.toArray() } : null,
+}));
+
+function boot(data) {
+  data = data || {};
+  readColors();
+  try { initScene(); } catch (err) { gl = false; $('noGl').hidden = false; $('spin').disabled = $('resetView').disabled = true; }
+  measure();
+  measureSpark();
+  setSpeed(4);
+  setDepth(40);
+  if (gl) { buildFrame(); buildFade(); }
+
+  if (data.s3 && data.s2) {
+    opts.births = data.births !== false; $('births').checked = opts.births;
+    opts.frame = data.frame !== false; $('frame').checked = opts.frame;
+    opts.wrap = data.wrap !== false; $('wrap').checked = opts.wrap;
+    setDepth(data.depth || 40);
+    setSpeed(data.speedIdx ?? 4);
+    const s3 = data.s3;
+    S3.N = s3.N || 40;
+    S3.world = makeWorld(S3.N);
+    $('worldSize').value = String(S3.N);
+    const r = parseRule3(s3.rule || '4555');
+    applyRule3(r.error ? parseRule3('4555') : r);
+    for (const i of s3.cells || []) S3.world.cells[i] = 1;
+    S3.world.pop = (s3.cells || []).length;
+    if (s3.start) { S3.start = new Uint8Array(S3.world.cells.length); for (const i of s3.start) S3.start[i] = 1; }
+    S3.gen = s3.gen || 0;
+    S3.h = s3.h || newHist(S3.world.pop);
+    S3.seed = s3.seed || null;
+    S3.seedId = s3.seedId || null;
+    const s2 = data.s2;
+    S2.cells = new Set(s2.cells || []);
+    S2.start = s2.start ? new Set(s2.start) : null;
+    S2.gen = s2.gen || 0;
+    S2.h = s2.h || newHist(S2.cells.size);
+    S2.patternId = s2.patternId || null;
+    S2.layers = [snapLayer()];
+    if (gl) buildFrame();
+    setMode(data.mode === 'stack' ? 'stack' : '3d', !!data.cam);
+    if (gl && data.cam) {
+      camera.position.fromArray(data.cam.p);
+      controls.target.fromArray(data.cam.t);
+      controls.update();
+    }
+    setSpin(gl && !!data.spin);
+    markActive();
+    $('hint').hidden = true;
+    setRunning(!!data.running);
+  } else {
+    applyRule3(parseRule3('4555'));
+    loadSeed3('g4555');
+    load2D('gun');
+    setMode('3d');
+    setSpin(gl && !reduceMotion);
+    if (!reduceMotion) setRunning(true);
+  }
+  dirty = sparkDirty = needsRender = true;
+  requestAnimationFrame(loop);
+}
+window.claude?.hot?.ready ? window.claude.hot.ready(boot) : boot(window.claude?.hot?.data ?? {});
+})();
+</script>
+</body>
+</html>
